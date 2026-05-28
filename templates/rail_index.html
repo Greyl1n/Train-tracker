@@ -1,0 +1,387 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Rail Tracker Finland | Live</title>
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet">
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <style>
+    :root {
+      --bg-color: #0d1117; --text-color: #e6edf3; --accent: #2f81f7;
+      --glass: rgba(22, 27, 34, 0.85); --border: rgba(255, 255, 255, 0.1);
+    }
+    body, html, #map { height: 100%; margin: 0; font-family: 'Inter', sans-serif; background: var(--bg-color); color: var(--text-color); overflow: hidden; }
+    header { position: absolute; top: 0; left: 0; right: 0; z-index: 1000; padding: 1rem 2rem; background: var(--glass); backdrop-filter: blur(10px); border-bottom: 1px solid var(--border); display: flex; justify-content: space-between; align-items: center; }
+    #sidebar { position: absolute; top: 80px; left: 1rem; bottom: 1rem; width: 300px; background: var(--glass); backdrop-filter: blur(10px); border: 1px solid var(--border); border-radius: 12px; z-index: 1000; display: flex; flex-direction: column; overflow: hidden; }
+    .sidebar-header { padding: 1rem; border-bottom: 1px solid var(--border); }
+    .search-box { width: 100%; padding: 0.5rem; background: rgba(0,0,0,0.2); border: 1px solid var(--border); border-radius: 6px; color: white; outline: none; }
+    .train-list { flex: 1; overflow-y: auto; padding: 0.5rem; }
+    .train-item { padding: 0.75rem; border-radius: 8px; margin-bottom: 0.5rem; cursor: pointer; transition: background 0.2s; border: 1px solid transparent; }
+    .train-item:hover { background: rgba(255,255,255,0.05); }
+    .train-item.active { background: rgba(47, 129, 247, 0.15); border-color: var(--accent); }
+    .train-item-title { font-weight: 600; color: var(--accent); font-size: 0.9rem; }
+    .train-item-speed { font-size: 0.7rem; color: #3fb950; background: rgba(46, 160, 67, 0.15); padding: 2px 6px; border-radius: 12px; float: right; }
+    .train-item-route { font-size: 0.8rem; margin: 4px 0; }
+    
+    /* Tabs */
+    .tabs { display: flex; border-bottom: 1px solid var(--border); }
+    .tab { flex: 1; text-align: center; padding: 0.75rem; cursor: pointer; color: #8b949e; font-weight: 600; font-size: 0.85rem; border-bottom: 2px solid transparent; }
+    .tab.active { color: var(--text-color); border-bottom-color: var(--accent); }
+    
+    /* Stats Panel */
+    #stats-panel { display: none; flex: 1; overflow-y: auto; padding: 1rem; }
+    #stats-panel.active { display: block; }
+    .stat-box { background: rgba(0,0,0,0.2); border: 1px solid var(--border); border-radius: 8px; padding: 1rem; margin-bottom: 1rem; }
+    .stat-title { font-size: 0.75rem; color: #8b949e; margin-bottom: 0.5rem; text-transform: uppercase; letter-spacing: 1px; }
+    .stat-value { font-size: 1.5rem; font-weight: 700; color: var(--text-color); }
+    .stat-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 0.5rem; }
+    .marker-badge { color: white; border-radius: 50%; width: 26px; height: 26px; display: flex; align-items: center; justify-content: center; font-size: 0.65rem; font-weight: 700; border: 2px solid white; box-shadow: 0 2px 8px rgba(0,0,0,0.4); }
+    .marker-badge.train { background: #2f81f7; } /* Blue */
+    .marker-badge.metro { background: #af52de; } /* Purple (Commuter) */
+    .marker-badge.cargo { background: #ffa500; } /* Orange */
+    .marker-badge.other { background: #484f58; } /* Grey */
+    .marker-badge.tram  { background: #3fb950; } /* Green (Placeholder for Tram) */
+
+    .leaflet-popup-content-wrapper { background: var(--glass); color: white; backdrop-filter: blur(10px); border: 1px solid var(--border); }
+    .popup-title { font-weight: 600; color: var(--accent); margin-bottom: 4px; }
+
+    #rail-status { font-size: 0.75rem; color: #8b949e; padding: 4px 8px; }
+    .track-label { background: rgba(0, 212, 255, 0.85); color: #0d1117; font-family: 'Inter', sans-serif; font-size: 0.65rem; font-weight: 700; padding: 1px 5px; border-radius: 4px; white-space: nowrap; pointer-events: none; border: 1px solid rgba(255,255,255,0.3); }
+    
+    /* Loading Bar Styles */
+    .loader-container { display: flex; align-items: center; gap: 8px; }
+    .loading-bar { width: 60px; height: 4px; background: rgba(255,255,255,0.1); border-radius: 2px; overflow: hidden; position: relative; display: none; }
+    .loading-bar-fill { width: 100%; height: 100%; background: var(--accent); position: absolute; left: -100%; transition: left 0.3s ease; }
+    .loading-bar.active { display: block; }
+    .loading-bar.active .loading-bar-fill { animation: loading-sweep 1.5s infinite linear; }
+    @keyframes loading-sweep {
+      0% { left: -100%; }
+      50% { left: 0; }
+      100% { left: 100%; }
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <div style="font-weight:700; font-size:1.2rem;">Rail Tracker Finland <span style="font-size: 0.6rem; opacity: 0.5; vertical-align: middle; margin-left: 8px;">v4.2</span></div>
+    <div class="loader-container">
+      <div id="loader" class="loading-bar"><div class="loading-bar-fill"></div></div>
+      <div id="status" style="color:#3fb950; font-size:0.9rem;">● Live</div>
+    </div>
+  </header>
+  <div id="sidebar">
+    <div class="tabs">
+      <div class="tab active" onclick="switchTab('list')">Live List</div>
+      <div class="tab" onclick="switchTab('stats')">Statistics</div>
+    </div>
+    
+    <div id="list-panel" style="display: flex; flex-direction: column; flex: 1; overflow: hidden;">
+      <div class="sidebar-header">
+        <input type="text" id="search" class="search-box" placeholder="Search trains...">
+        <div id="rail-status">Loading railway network...</div>
+      </div>
+      <div id="list" class="train-list"></div>
+    </div>
+    
+    <div id="stats-panel">
+      <div class="stat-box">
+        <div class="stat-title">Total Active Trains</div>
+        <div class="stat-value" id="stat-total">0</div>
+      </div>
+      <div class="stat-grid" style="margin-bottom: 1rem;">
+        <div class="stat-box" style="margin-bottom:0;">
+          <div class="stat-title">Avg Speed</div>
+          <div class="stat-value" id="stat-avg-speed">0 <span style="font-size:0.8rem;font-weight:400;">km/h</span></div>
+        </div>
+        <div class="stat-box" style="margin-bottom:0;">
+          <div class="stat-title">Max Speed</div>
+          <div class="stat-value" id="stat-max-speed">0 <span style="font-size:0.8rem;font-weight:400;">km/h</span></div>
+        </div>
+      </div>
+      <div class="stat-box">
+        <div class="stat-title">Categories</div>
+        <div id="stat-categories" style="font-size:0.85rem; line-height:1.5;"></div>
+      </div>
+      <div class="stat-box">
+        <div class="stat-title">Active Trains Over Time</div>
+        <canvas id="historyChart" width="200" height="150"></canvas>
+      </div>
+    </div>
+  </div>
+  <div id="map"></div>
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <script src="https://cdn.socket.io/4.7.5/socket.io.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/paho-mqtt/1.0.1/mqttws31.min.js"></script>
+  <script>
+    const map = L.map("map", { zoomControl: false }).setView([64.5, 26.0], 5);
+    L.tileLayer("https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png").addTo(map);
+
+    const loader = document.getElementById("loader");
+    function showLoading() { loader.classList.add("active"); }
+    function hideLoading() { setTimeout(() => loader.classList.remove("active"), 1000); }
+
+    // Fetch ACTUAL railway network from Digitraffic Infra API (WGS84 coordinates)
+    showLoading();
+    const trackLabelsGroup = L.layerGroup();
+    const LABEL_MIN_ZOOM = 9;
+
+    fetch("https://rata.digitraffic.fi/infra-api/latest/radat.geojson?srsName=crs:84")
+      .then(resp => resp.json())
+      .then(geojson => {
+        L.geoJSON(geojson, {
+          style: {
+            color: "#00d4ff",
+            weight: 4,
+            opacity: 0.9
+          },
+          onEachFeature: (feature, layer) => {
+            const name = feature.properties?.ratanumero || "";
+            layer.bindPopup(`<div class="popup-title">Railway: ${name}</div>`);
+
+            // Create a label marker at the midpoint of the line
+            if (name) {
+              const coords = feature.geometry.coordinates;
+              // Get the first linestring of the MultiLineString
+              const line = coords[0];
+              if (line && line.length > 1) {
+                const mid = line[Math.floor(line.length / 2)];
+                const icon = L.divIcon({
+                  className: '',
+                  html: `<div class="track-label">${name}</div>`,
+                  iconSize: null,
+                  iconAnchor: [15, 8]
+                });
+                const labelMarker = L.marker([mid[1], mid[0]], { icon, interactive: false });
+                trackLabelsGroup.addLayer(labelMarker);
+              }
+            }
+          }
+        }).addTo(map);
+
+        // Show/hide labels based on zoom
+        function updateLabels() {
+          if (map.getZoom() >= LABEL_MIN_ZOOM) {
+            if (!map.hasLayer(trackLabelsGroup)) map.addLayer(trackLabelsGroup);
+          } else {
+            if (map.hasLayer(trackLabelsGroup)) map.removeLayer(trackLabelsGroup);
+          }
+        }
+        map.on('zoomend', updateLabels);
+        updateLabels();
+
+        document.getElementById("rail-status").textContent = `${geojson.features.length} railway lines loaded`;
+        document.getElementById("rail-status").style.color = "#3fb950";
+        hideLoading();
+      })
+      .catch(err => {
+        console.error("Failed to load railway network:", err);
+        document.getElementById("rail-status").textContent = "Railway network unavailable";
+        document.getElementById("rail-status").style.color = "#f85149";
+        hideLoading();
+      });
+
+    L.control.zoom({ position: 'bottomright' }).addTo(map);
+
+    const socket = io();
+    const markers = {};
+    const listItems = {};
+    const listEl = document.getElementById("list");
+    const searchEl = document.getElementById("search");
+    let query = "";
+
+    function switchTab(tabId) {
+      document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+      event.target.classList.add('active');
+      document.getElementById('list-panel').style.display = tabId === 'list' ? 'flex' : 'none';
+      document.getElementById('stats-panel').classList.toggle('active', tabId === 'stats');
+    }
+
+    // Chart.js Setup
+    const ctx = document.getElementById('historyChart').getContext('2d');
+    const historyChart = new Chart(ctx, {
+      type: 'line',
+      data: { labels: [], datasets: [{ label: 'Trains', data: [], borderColor: '#2f81f7', backgroundColor: 'rgba(47, 129, 247, 0.1)', fill: true, tension: 0.3 }] },
+      options: { 
+        responsive: true, 
+        plugins: { legend: { display: false } },
+        scales: { 
+          x: { ticks: { color: '#8b949e', maxTicksLimit: 5 }, grid: { color: 'rgba(255,255,255,0.05)' } },
+          y: { ticks: { color: '#8b949e' }, grid: { color: 'rgba(255,255,255,0.05)' }, beginAtZero: true }
+        }
+      }
+    });
+
+    socket.on("train_statistics", (stats) => {
+      document.getElementById("stat-total").textContent = stats.total;
+      document.getElementById("stat-avg-speed").innerHTML = `${stats.avg_speed} <span style="font-size:0.8rem;font-weight:400;">km/h</span>`;
+      document.getElementById("stat-max-speed").innerHTML = `${stats.max_speed} <span style="font-size:0.8rem;font-weight:400;">km/h</span>`;
+      
+      const catsEl = document.getElementById("stat-categories");
+      catsEl.innerHTML = Object.entries(stats.categories).map(([k, v]) => `<div><b style="color:#2f81f7;text-transform:capitalize;">${k}</b>: ${v}</div>`).join('');
+
+      historyChart.data.labels = stats.history.times;
+      historyChart.data.datasets[0].data = stats.history.counts;
+      historyChart.update();
+    });
+
+    socket.on("train_locations", (trains) => {
+      showLoading();
+      const ids = new Set();
+      trains.forEach(t => {
+        const id = String(t.trainNumber);
+        ids.add(id);
+        
+        // Safety check for location data
+        if (!t.location || !t.location.coordinates || t.location.coordinates.length < 2) {
+          return;
+        }
+
+        const pos = [t.location.coordinates[1], t.location.coordinates[0]];
+        const route = `${t.origin || 'Unknown'} → ${t.destination || 'Unknown'}`;
+        const searchStr = `${t.trainNumber} ${route} ${t.trainType}`.toLowerCase();
+
+        if (!markers[id]) {
+          const icon = L.divIcon({ 
+            className: 'custom-div-icon', 
+            html: `<div class="marker-badge ${t.category || 'other'}">${t.trainNumber}</div>`, 
+            iconSize: [26, 26],
+            iconAnchor: [13, 13]
+          });
+          const commuterStr = t.commuterLineID ? `Commuter Line: ${t.commuterLineID}<br/>` : '';
+          const timeStr = t.timestamp ? `Time: ${new Date(t.timestamp).toLocaleTimeString()}<br/>` : '';
+          markers[id] = L.marker(pos, { icon }).addTo(map).bindPopup(`<div class="popup-title">Train #${t.trainNumber}</div><div style="font-size:0.8rem">${route}<br/>Type: ${t.trainType}<br/>Speed: ${t.speed} km/h<br/>Operator: ${t.operatorShortCode || 'N/A'}<br/>${commuterStr}Date: ${t.departureDate || 'N/A'}<br/>${timeStr}</div>`);
+          
+          const el = document.createElement("div");
+          el.className = "train-item";
+          
+          // Get category color
+          const catColors = { train: '#2f81f7', metro: '#af52de', cargo: '#ffa500', other: '#8b949e' };
+          const catColor = catColors[t.category] || catColors.other;
+
+          el.innerHTML = `<span class="train-item-speed">${t.speed} km/h</span><div class="train-item-title" style="color:${catColor}">Train #${t.trainNumber}</div><div class="train-item-route">${route}</div>`;
+          el.onclick = () => {
+            document.querySelectorAll(".train-item").forEach(i => i.classList.remove("active"));
+            el.classList.add("active");
+            map.flyTo(pos, 10);
+            markers[id].openPopup();
+          };
+          listItems[id] = { el, searchStr };
+        } else {
+          markers[id].setLatLng(pos);
+          if (listItems[id]) {
+            listItems[id].el.querySelector(".train-item-speed").textContent = `${t.speed} km/h`;
+          }
+        }
+      });
+
+      Object.keys(markers).forEach(id => {
+        if (!ids.has(id)) {
+          map.removeLayer(markers[id]);
+          delete markers[id];
+          delete listItems[id];
+        }
+      });
+      renderList();
+      hideLoading();
+    });
+
+    searchEl.oninput = (e) => { query = e.target.value.toLowerCase(); renderList(); };
+
+    // --- HSL MQTT Integration (Metro & Tram) ---
+    const hslClient = new Paho.MQTT.Client("mqtt.hsl.fi", 443, "client-" + Math.random());
+    hslClient.onMessageArrived = (message) => {
+      try {
+        const payload = JSON.parse(message.payloadString);
+        const data = payload.VP;
+        if (!data || !data.lat || !data.long) return;
+
+        const id = "hsl-" + data.veh;
+        const pos = [data.lat, data.long];
+        const mode = message.destinationName.split('/')[5]; // metro or tram
+        const line = data.desi || "??";
+        const speed = Math.round((data.spd || 0) * 3.6);
+        const route = `${mode.charAt(0).toUpperCase() + mode.slice(1)} Line ${line}`;
+        const searchStr = `${route} ${id}`.toLowerCase();
+
+        if (!markers[id]) {
+          const icon = L.divIcon({ 
+            className: 'custom-div-icon', 
+            html: `<div class="marker-badge ${mode}">${line}</div>`, 
+            iconSize: [26, 26],
+            iconAnchor: [13, 13]
+          });
+          const timestampStr = data.tst ? `Time: ${new Date(data.tst).toLocaleTimeString()}<br/>` : '';
+          const delayStr = data.dl !== undefined ? `Delay: ${data.dl}s<br/>` : '';
+          const directionStr = data.dir ? `Direction: ${data.dir}<br/>` : '';
+          markers[id] = L.marker(pos, { icon }).addTo(map).bindPopup(`<div class="popup-title">${route}</div><div style="font-size:0.8rem">Vehicle: ${data.veh}<br/>Speed: ${speed} km/h<br/>${directionStr}${delayStr}${timestampStr}</div>`);
+          
+          const el = document.createElement("div");
+          el.className = "train-item";
+          const catColor = mode === 'metro' ? '#af52de' : '#3fb950';
+          el.innerHTML = `<span class="train-item-speed">${speed} km/h</span><div class="train-item-title" style="color:${catColor}">${route}</div><div class="train-item-route">Helsinki Region</div>`;
+          el.onclick = () => {
+            document.querySelectorAll(".train-item").forEach(i => i.classList.remove("active"));
+            el.classList.add("active");
+            map.flyTo(pos, 13);
+            markers[id].openPopup();
+          };
+          listItems[id] = { el, searchStr, timestamp: Date.now() };
+        } else {
+          markers[id].setLatLng(pos);
+          if (listItems[id]) {
+            listItems[id].el.querySelector(".train-item-speed").textContent = `${speed} km/h`;
+            listItems[id].timestamp = Date.now();
+          }
+        }
+      } catch (e) { console.error("HSL MQTT Error:", e); }
+    };
+
+    hslClient.connect({
+      useSSL: true,
+      onSuccess: () => {
+        console.log("Connected to HSL MQTT");
+        hslClient.subscribe("/hfp/v2/journey/ongoing/vp/metro/#");
+        hslClient.subscribe("/hfp/v2/journey/ongoing/vp/tram/#");
+      },
+      onFailure: (err) => console.error("HSL MQTT Connection Failed:", err)
+    });
+
+    // Cleanup stale HSL markers (since MQTT doesn't give us a full list every time)
+    setInterval(() => {
+      const now = Date.now();
+      Object.keys(listItems).forEach(id => {
+        if (id.startsWith('hsl-') && now - listItems[id].timestamp > 60000) {
+          map.removeLayer(markers[id]);
+          delete markers[id];
+          delete listItems[id];
+          renderList();
+        }
+      });
+    }, 30000);
+
+    function renderList() {
+      listEl.innerHTML = "";
+      let count = 0;
+      const MAX_ITEMS = 100;
+      
+      const items = Object.values(listItems);
+      for (const item of items) {
+        if (!query || item.searchStr.includes(query)) {
+          listEl.appendChild(item.el);
+          count++;
+        }
+        if (count >= MAX_ITEMS) break;
+      }
+
+      if (count >= MAX_ITEMS) {
+        const more = document.createElement("div");
+        more.style.cssText = "padding: 10px; text-align: center; color: #8b949e; font-size: 0.8rem;";
+        more.innerText = `Showing first ${MAX_ITEMS} results...`;
+        listEl.appendChild(more);
+      }
+    }
+  </script>
+</body>
+</html>

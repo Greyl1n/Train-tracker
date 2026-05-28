@@ -1,0 +1,239 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Flight Tracker Finland | Live</title>
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet">
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <style>
+    :root { --bg: #0d1117; --text: #e6edf3; --accent: #ffae00; --glass: rgba(22, 27, 34, 0.85); --border: rgba(255, 255, 255, 0.1); }
+    body, html, #map { height: 100%; margin: 0; font-family: 'Inter', sans-serif; background: var(--bg); color: var(--text); overflow: hidden; }
+    header { position: absolute; top: 0; left: 0; right: 0; z-index: 1000; padding: 1rem 2rem; background: var(--glass); backdrop-filter: blur(10px); border-bottom: 1px solid var(--border); display: flex; justify-content: space-between; align-items: center; }
+    #sidebar { position: absolute; top: 80px; left: 1rem; bottom: 1rem; width: 320px; background: var(--glass); backdrop-filter: blur(10px); border: 1px solid var(--border); border-radius: 12px; z-index: 1000; display: flex; flex-direction: column; overflow: hidden; }
+    .sidebar-header { padding: 1rem; border-bottom: 1px solid var(--border); }
+    .search-box { width: 100%; padding: 0.5rem; background: rgba(0,0,0,0.2); border: 1px solid var(--border); border-radius: 6px; color: white; outline: none; margin-bottom: 8px; }
+    .list { flex: 1; overflow-y: auto; padding: 0.5rem; }
+    .item { padding: 0.75rem; border-radius: 8px; margin-bottom: 0.5rem; cursor: pointer; border: 1px solid transparent; }
+    .item:hover { background: rgba(255,255,255,0.05); }
+    .item.active { background: rgba(255, 174, 0, 0.1); border-color: var(--accent); }
+    .title { font-weight: 600; color: var(--accent); font-size: 0.9rem; }
+    .alt { font-size: 0.7rem; color: #58a6ff; background: rgba(88, 166, 255, 0.1); padding: 2px 6px; border-radius: 12px; float: right; }
+    .speed { font-size: 0.7rem; color: #3fb950; margin-left: 5px; }
+
+    /* Tabs */
+    .tabs { display: flex; border-bottom: 1px solid var(--border); }
+    .tab { flex: 1; text-align: center; padding: 0.75rem; cursor: pointer; color: #8b949e; font-weight: 600; font-size: 0.85rem; border-bottom: 2px solid transparent; }
+    .tab.active { color: var(--text); border-bottom-color: var(--accent); }
+    
+    /* Stats Panel */
+    #stats-panel { display: none; flex: 1; overflow-y: auto; padding: 1rem; }
+    #stats-panel.active { display: block; }
+    .stat-box { background: rgba(0,0,0,0.2); border: 1px solid var(--border); border-radius: 8px; padding: 1rem; margin-bottom: 1rem; }
+    .stat-title { font-size: 0.75rem; color: #8b949e; margin-bottom: 0.5rem; text-transform: uppercase; letter-spacing: 1px; }
+    .stat-value { font-size: 1.5rem; font-weight: 700; color: var(--text); }
+    .stat-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 0.5rem; }
+
+    /* Loading Bar Styles */
+    .loader-container { display: flex; align-items: center; gap: 8px; }
+    .loading-bar { width: 60px; height: 4px; background: rgba(255,255,255,0.1); border-radius: 2px; overflow: hidden; position: relative; display: none; }
+    .loading-bar-fill { width: 100%; height: 100%; background: var(--accent); position: absolute; left: -100%; transition: left 0.3s ease; }
+    .loading-bar.active { display: block; }
+    .loading-bar.active .loading-bar-fill { animation: loading-sweep 1.5s infinite linear; }
+    @keyframes loading-sweep { 0% { left: -100%; } 50% { left: 0; } 100% { left: 100%; } }
+  </style>
+</head>
+<body>
+  <header>
+    <div style="font-weight:700; font-size:1.2rem;">Flight Tracker Finland</div>
+    <div class="loader-container">
+      <div id="loader" class="loading-bar"><div class="loading-bar-fill"></div></div>
+      <div id="status" style="color:var(--accent); font-size:0.9rem;">● Live</div>
+    </div>
+  </header>
+  <div id="sidebar">
+    <div class="tabs">
+      <div class="tab active" onclick="switchTab('list')">Live List</div>
+      <div class="tab" onclick="switchTab('stats')">Statistics</div>
+    </div>
+    
+    <div id="list-panel" style="display: flex; flex-direction: column; flex: 1; overflow: hidden;">
+      <div class="sidebar-header">
+        <input type="text" id="search" class="search-box" placeholder="Search flights (Callsign/ICAO)...">
+      </div>
+      <div id="list" class="list"></div>
+    </div>
+
+    <div id="stats-panel">
+      <div class="stat-box">
+        <div class="stat-title">Total Active Flights</div>
+        <div class="stat-value" id="stat-total">0</div>
+      </div>
+      <div class="stat-grid" style="margin-bottom: 1rem;">
+        <div class="stat-box" style="margin-bottom:0;">
+          <div class="stat-title">Avg Altitude</div>
+          <div class="stat-value" id="stat-avg-alt">0 <span style="font-size:0.8rem;font-weight:400;">m</span></div>
+        </div>
+        <div class="stat-box" style="margin-bottom:0;">
+          <div class="stat-title">Avg Speed</div>
+          <div class="stat-value" id="stat-avg-speed">0 <span style="font-size:0.8rem;font-weight:400;">km/h</span></div>
+        </div>
+      </div>
+      <div class="stat-box">
+        <div class="stat-title">Status</div>
+        <div id="stat-categories" style="font-size:0.85rem; line-height:1.5;"></div>
+      </div>
+      <div class="stat-box">
+        <div class="stat-title">Active Flights Over Time</div>
+        <canvas id="historyChart" width="200" height="150"></canvas>
+      </div>
+    </div>
+  </div>
+  <div id="map"></div>
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <script src="https://cdn.socket.io/4.7.5/socket.io.min.js"></script>
+  <script>
+    const map = L.map("map", { zoomControl: false, preferCanvas: true }).setView([60.0, 24.0], 5);
+    L.tileLayer("https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png").addTo(map);
+
+    const loader = document.getElementById("loader");
+    function showLoading() { loader.classList.add("active"); }
+    function hideLoading() { setTimeout(() => loader.classList.remove("active"), 1000); }
+
+    const socket = io();
+    let listData = [], selectedId = null;
+    let query = "";
+    const flightLayer = L.layerGroup().addTo(map);
+
+    function switchTab(tabId) {
+      document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+      event.target.classList.add('active');
+      document.getElementById('list-panel').style.display = tabId === 'list' ? 'flex' : 'none';
+      document.getElementById('stats-panel').classList.toggle('active', tabId === 'stats');
+    }
+
+    const ctx = document.getElementById('historyChart').getContext('2d');
+    const historyChart = new Chart(ctx, {
+      type: 'line',
+      data: { labels: [], datasets: [{ label: 'Flights', data: [], borderColor: '#ffae00', backgroundColor: 'rgba(255, 174, 0, 0.1)', fill: true, tension: 0.3 }] },
+      options: { 
+        responsive: true, 
+        plugins: { legend: { display: false } },
+        scales: { 
+          x: { ticks: { color: '#8b949e', maxTicksLimit: 5 }, grid: { color: 'rgba(255,255,255,0.05)' } },
+          y: { ticks: { color: '#8b949e' }, grid: { color: 'rgba(255,255,255,0.05)' }, beginAtZero: true }
+        }
+      }
+    });
+
+    socket.on("flight_statistics", (stats) => {
+      document.getElementById("stat-total").textContent = stats.total;
+      document.getElementById("stat-avg-alt").innerHTML = `${stats.avg_alt} <span style="font-size:0.8rem;font-weight:400;">m</span>`;
+      document.getElementById("stat-avg-speed").innerHTML = `${stats.avg_speed} <span style="font-size:0.8rem;font-weight:400;">km/h</span>`;
+      
+      const catsEl = document.getElementById("stat-categories");
+      catsEl.innerHTML = Object.entries(stats.status).map(([k, v]) => `<div><b style="color:var(--accent);text-transform:capitalize;">${k}</b>: ${v}</div>`).join('');
+
+      historyChart.data.labels = stats.history.times;
+      historyChart.data.datasets[0].data = stats.history.counts;
+      historyChart.update();
+    });
+
+    socket.on("flight_locations", (flights) => {
+      showLoading();
+      listData = flights;
+      renderList();
+      updateMap();
+      hideLoading();
+    });
+
+    function selectFlight(f, flyTo = false) {
+      selectedId = f.icao24;
+      renderList();
+      updateMap();
+      
+      const popup = L.popup()
+        .setLatLng([f.lat, f.lon])
+        .setContent(`
+          <div style="font-family:'Inter', sans-serif;">
+            <b style="color:var(--accent); font-size:1.1rem;">${f.callsign}</b><br/>
+            <span style="color:#8b949e; font-size:0.8rem;">ICAO: ${f.icao24.toUpperCase()} | Country: ${f.country || 'N/A'}</span><hr style="border:0; border-top:1px solid #30363d; margin:5px 0;">
+            Altitude: ${Math.round(f.alt)} m<br/>
+            Speed: ${Math.round(f.speed)} km/h<br/>
+            Heading: ${Math.round(f.heading)}°<br/>
+            V-Rate: ${f.v_rate} m/s<br/>
+            On Ground: ${f.on_ground ? 'Yes' : 'No'}
+          </div>
+        `)
+        .openOn(map);
+
+      if (flyTo) {
+        map.flyTo([f.lat, f.lon], 10);
+      }
+    }
+
+    function updateMap() {
+      flightLayer.clearLayers();
+      
+      listData.forEach(f => {
+        if (query && !f.callsign.toLowerCase().includes(query) && !f.icao24.toLowerCase().includes(query)) return;
+
+        const isSelected = selectedId === f.icao24;
+        
+        // Use a divIcon with a rotated airplane emoji
+        const icon = L.divIcon({
+          html: `<div style="transform: rotate(${f.heading - 45}deg); font-size: ${isSelected ? '24px' : '16px'}; color: ${isSelected ? '#ffae00' : '#58a6ff'}; text-shadow: 0 0 5px rgba(0,0,0,0.5);">✈️</div>`,
+          iconSize: [24, 24],
+          className: 'plane-icon'
+        });
+
+        const marker = L.marker([f.lat, f.lon], { icon });
+        marker.on('click', () => selectFlight(f));
+        flightLayer.addLayer(marker);
+      });
+    }
+
+    function renderList() {
+      const listEl = document.getElementById("list");
+      listEl.innerHTML = "";
+      
+      let count = 0;
+      const MAX_ITEMS = 100;
+
+      for (const f of listData) {
+        if (query && !f.callsign.toLowerCase().includes(query) && !f.icao24.toLowerCase().includes(query)) continue;
+
+        count++;
+        if (count > MAX_ITEMS) break;
+
+        const el = document.createElement("div");
+        el.className = `item ${selectedId === f.icao24 ? 'active' : ''}`;
+        el.innerHTML = `
+          <span class="alt">${Math.round(f.alt)}m</span>
+          <div class="title">${f.callsign}</div>
+          <div style="font-size:0.75rem; opacity:0.8;">
+            ICAO: ${f.icao24.toUpperCase()} 
+            <span class="speed">${Math.round(f.speed)} km/h</span>
+          </div>
+        `;
+        el.onclick = () => selectFlight(f, true);
+        listEl.appendChild(el);
+      }
+
+      if (count > MAX_ITEMS) {
+        const more = document.createElement("div");
+        more.style.cssText = "padding: 10px; text-align: center; color: #8b949e; font-size: 0.8rem;";
+        more.innerText = `Showing first ${MAX_ITEMS} of ${listData.length} flights...`;
+        listEl.appendChild(more);
+      }
+    }
+
+    document.getElementById("search").oninput = (e) => { 
+      query = e.target.value.toLowerCase(); 
+      renderList();
+      updateMap();
+    };
+  </script>
+</body>
+</html>

@@ -1,0 +1,839 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Train Tracker Finland | Live (v2)</title>
+  <meta name="description" content="Live train tracking in Finland using Digitraffic API." />
+
+  <!-- Google Fonts: Inter -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+
+  <!-- Leaflet CSS: Required for the interactive map -->
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css?v=2" />
+
+  <style>
+    /* 
+       DESIGN SYSTEM & THEMING
+       -----------------------
+       Using CSS variables for a consistent premium dark-mode aesthetic.
+       Glassmorphism effects are used for overlays (header, sidebar, panels).
+    */
+    :root {
+      --bg-color: #0d1117;
+      --text-color: #e6edf3;
+      --accent-color: #2f81f7;
+      --glass-bg: rgba(22, 27, 34, 0.85);
+      --glass-border: rgba(255, 255, 255, 0.1);
+      --card-shadow: 0 8px 24px rgba(0, 0, 0, 0.5);
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    body,
+    html {
+      height: 100%;
+      width: 100%;
+      font-family: 'Inter', -apple-system, sans-serif;
+      background-color: var(--bg-color);
+      color: var(--text-color);
+      overflow: hidden;
+    }
+
+    /* 
+       LAYOUT COMPONENTS
+       -----------------
+    */
+
+    /* Top Navigation Bar */
+    header {
+      position: absolute;
+      top: 0;
+      left: 0;
+      right: 0;
+      z-index: 1000;
+      padding: 1rem 2rem;
+      background: var(--glass-bg);
+      backdrop-filter: blur(12px);
+      -webkit-backdrop-filter: blur(12px);
+      border-bottom: 1px solid var(--glass-border);
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
+    }
+
+    .brand {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      font-weight: 700;
+      font-size: 1.25rem;
+      letter-spacing: -0.02em;
+    }
+
+    .status-badge {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-size: 0.875rem;
+      font-weight: 500;
+      padding: 6px 14px;
+      border-radius: 20px;
+      background: rgba(46, 160, 67, 0.15);
+      color: #3fb950;
+      border: 1px solid rgba(46, 160, 67, 0.3);
+      transition: all 0.3s ease;
+    }
+
+    .status-badge.disconnected {
+      background: rgba(248, 81, 73, 0.15);
+      color: #f85149;
+      border-color: rgba(248, 81, 73, 0.3);
+    }
+
+    /* Pulsing animation for the 'Live' status indicator */
+    @keyframes pulse {
+      0% {
+        transform: scale(0.95);
+        box-shadow: 0 0 0 0 rgba(currentColor, 0.7);
+      }
+
+      70% {
+        transform: scale(1);
+        box-shadow: 0 0 0 6px rgba(currentColor, 0);
+      }
+
+      100% {
+        transform: scale(0.95);
+        box-shadow: 0 0 0 0 rgba(currentColor, 0);
+      }
+    }
+
+    /* 
+       MAP & LEAFLET CUSTOMIZATION
+       ---------------------------
+    */
+
+    /* Map Container: Full-screen height */
+    #map {
+      width: 100%;
+      height: 100vh;
+      z-index: 1;
+    }
+
+    /* Dark theme for Leaflet controls */
+    .leaflet-control-zoom-in,
+    .leaflet-control-zoom-out {
+      background-color: var(--glass-bg) !important;
+      color: var(--text-color) !important;
+      border: 1px solid var(--glass-border) !important;
+      backdrop-filter: blur(8px);
+    }
+
+    .leaflet-control-attribution {
+      background: var(--glass-bg) !important;
+      color: #8b949e !important;
+      border: 1px solid var(--glass-border) !important;
+      font-size: 10px !important;
+    }
+
+    .railway-layer {
+      opacity: 0.8;
+      filter: saturate(1.5) brightness(1.2);
+    }
+
+    /* Customizing Popups for Dark Theme */
+    .leaflet-popup-content-wrapper {
+      background: var(--glass-bg);
+      color: var(--text-color);
+      backdrop-filter: blur(8px);
+      -webkit-backdrop-filter: blur(8px);
+      border: 1px solid var(--glass-border);
+      border-radius: 12px;
+      box-shadow: var(--card-shadow);
+      padding: 8px;
+    }
+
+    .leaflet-popup-tip {
+      background: var(--glass-bg);
+      border: 1px solid var(--glass-border);
+    }
+
+    .popup-title {
+      font-weight: 600;
+      font-size: 1rem;
+      margin-bottom: 4px;
+      color: var(--accent-color);
+    }
+
+    .popup-content {
+      font-size: 0.875rem;
+      color: #8b949e;
+    }
+
+    /* Stats Panel */
+    #stats-panel {
+      position: absolute;
+      bottom: 2rem;
+      right: 2rem;
+      z-index: 1000;
+      background: var(--glass-bg);
+      backdrop-filter: blur(12px);
+      -webkit-backdrop-filter: blur(12px);
+      border: 1px solid var(--glass-border);
+      border-radius: 16px;
+      padding: 1.25rem;
+      box-shadow: var(--card-shadow);
+      min-width: 200px;
+    }
+
+    .stat-label {
+      font-size: 0.75rem;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      color: #8b949e;
+      margin-bottom: 4px;
+    }
+
+    .stat-value {
+      font-size: 2rem;
+      font-weight: 700;
+      line-height: 1.1;
+      color: var(--text-color);
+    }
+
+    /* 
+       INTERACTIVE ELEMENTS & OVERLAYS
+       -------------------------------
+    */
+
+    /* Loading Overlay: Shown until the first data packet arrives */
+    #loading-overlay {
+      position: fixed;
+      top: 0;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      background: var(--bg-color);
+      z-index: 9999;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      transition: opacity 0.5s ease;
+    }
+
+    .spinner {
+      width: 48px;
+      height: 48px;
+      border: 4px solid rgba(255, 255, 255, 0.1);
+      border-top-color: var(--accent-color);
+      border-radius: 50%;
+      animation: spin 1s linear infinite;
+      margin-bottom: 1rem;
+    }
+
+    @keyframes spin {
+      100% {
+        transform: rotate(360deg);
+      }
+    }
+
+    /* 
+       TRAIN MARKERS & POPUPS
+       ----------------------
+    */
+
+    /* Custom Train Marker Styles */
+    .custom-train-icon {
+      background: none !important;
+      border: none !important;
+    }
+
+    .train-badge {
+      background: var(--accent-color);
+      color: white;
+      border-radius: 50%;
+      width: 32px;
+      height: 32px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 0.75rem;
+      font-weight: 700;
+      border: 2px solid white;
+      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
+      transition: all 0.2s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+      cursor: pointer;
+    }
+
+    .train-badge:hover {
+      transform: scale(1.25);
+      z-index: 2000 !important;
+      box-shadow: 0 0 15px var(--accent-color);
+    }
+
+    .popup-route {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin: 8px 0;
+      padding: 6px 10px;
+      background: rgba(255, 255, 255, 0.05);
+      border-radius: 8px;
+      font-weight: 500;
+      color: var(--text-color);
+    }
+
+    .popup-route-arrow {
+      color: var(--accent-color);
+      font-size: 1.2rem;
+    }
+
+    /* Shutdown Button */
+    .shutdown-btn {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      font-size: 0.875rem;
+      font-weight: 600;
+      padding: 6px 14px;
+      border-radius: 20px;
+      background: rgba(248, 81, 73, 0.1);
+      color: #f85149;
+      border: 1px solid rgba(248, 81, 73, 0.3);
+      cursor: pointer;
+      transition: all 0.2s ease;
+      outline: none;
+    }
+
+    .shutdown-btn:hover {
+      background: rgba(248, 81, 73, 0.2);
+      transform: scale(1.05);
+    }
+
+    .shutdown-btn:active {
+      transform: scale(0.95);
+    }
+
+    /* 
+       SIDEBAR: TRAIN LIST & SEARCH
+       ----------------------------
+    */
+
+    /* Sidebar Container */
+    #sidebar {
+      position: absolute;
+      top: 90px;
+      left: 2rem;
+      bottom: 2rem;
+      width: 320px;
+      background: var(--glass-bg);
+      backdrop-filter: blur(12px);
+      -webkit-backdrop-filter: blur(12px);
+      border: 1px solid var(--glass-border);
+      border-radius: 16px;
+      box-shadow: var(--card-shadow);
+      z-index: 1000;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+      transition: transform 0.3s ease;
+    }
+
+    .sidebar-header {
+      padding: 1.25rem;
+      border-bottom: 1px solid var(--glass-border);
+      background: rgba(255, 255, 255, 0.02);
+    }
+
+    .sidebar-header h3 {
+      font-size: 1rem;
+      font-weight: 600;
+      color: var(--text-color);
+      margin-bottom: 0.75rem;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+
+    .search-box {
+      width: 100%;
+      padding: 0.5rem 0.75rem;
+      background: rgba(0, 0, 0, 0.2);
+      border: 1px solid var(--glass-border);
+      border-radius: 8px;
+      color: var(--text-color);
+      font-size: 0.875rem;
+      outline: none;
+      transition: border-color 0.2s;
+    }
+
+    .search-box:focus {
+      border-color: var(--accent-color);
+    }
+
+    .train-list {
+      flex: 1;
+      overflow-y: auto;
+      padding: 0.5rem;
+    }
+
+    .train-list::-webkit-scrollbar {
+      width: 6px;
+    }
+    .train-list::-webkit-scrollbar-track {
+      background: transparent;
+    }
+    .train-list::-webkit-scrollbar-thumb {
+      background: rgba(255, 255, 255, 0.2);
+      border-radius: 3px;
+    }
+    .train-list::-webkit-scrollbar-thumb:hover {
+      background: rgba(255, 255, 255, 0.3);
+    }
+
+    .train-item {
+      padding: 0.75rem;
+      border-radius: 8px;
+      margin-bottom: 0.5rem;
+      cursor: pointer;
+      transition: background 0.2s ease;
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+    }
+
+    .train-item:hover {
+      background: rgba(255, 255, 255, 0.08);
+    }
+
+    .train-item.active {
+      background: rgba(47, 129, 247, 0.15);
+      border: 1px solid rgba(47, 129, 247, 0.3);
+    }
+
+    .train-item-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+
+    .train-item-title {
+      font-weight: 600;
+      color: var(--accent-color);
+      font-size: 0.9rem;
+    }
+
+    .train-item-speed {
+      font-size: 0.7rem;
+      font-weight: 700;
+      color: #3fb950;
+      background: rgba(46, 160, 67, 0.15);
+      padding: 2px 6px;
+      border-radius: 12px;
+    }
+
+    .train-item-route {
+      font-size: 0.8rem;
+      color: var(--text-color);
+      display: flex;
+      align-items: center;
+      gap: 4px;
+    }
+
+    .train-item-meta {
+      font-size: 0.7rem;
+      color: #8b949e;
+      display: flex;
+      justify-content: space-between;
+    }
+
+    .leaflet-left .leaflet-control {
+      margin-left: 360px;
+    }
+  </style>
+</head>
+
+<body>
+
+  <!-- Initial Loading Screen -->
+  <div id="loading-overlay">
+    <div class="spinner"></div>
+    <h3 id="loading-title">Connecting to Tracker...</h3>
+    <p id="loading-subtitle" style="margin-top: 10px; color: #8b949e; font-size: 0.875rem;">Initializing live data stream</p>
+  </div>
+
+  <header>
+    <div class="brand">
+      <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+        stroke-linecap="round" stroke-linejoin="round">
+        <rect x="4" y="3" width="16" height="16" rx="2" ry="2"></rect>
+        <path d="M4 11h16"></path>
+        <path d="M12 3v8"></path>
+        <path d="M8 19l-2 3"></path>
+        <path d="M18 22l-2-3"></path>
+        <path d="M8 15h0"></path>
+        <path d="M16 15h0"></path>
+      </svg>
+      Train Tracker
+    </div>
+    <div style="display: flex; align-items: center; gap: 12px;">
+      <div id="status-badge" class="status-badge disconnected">
+        <div class="pulsing-dot"></div>
+        <span id="status-text">Connecting...</span>
+      </div>
+      <button id="shutdown-btn" class="shutdown-btn" title="Shutdown Server & Close">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18.36 6.64a9 9 0 1 1-12.73 0"></path><line x1="12" y1="2" x2="12" y2="12"></line></svg>
+        Shutdown
+      </button>
+    </div>
+  </header>
+
+  <div id="sidebar">
+    <div class="sidebar-header">
+      <h3>Active Trains</h3>
+      <input type="text" id="train-search" class="search-box" placeholder="Search train or route..." />
+    </div>
+    <div id="train-list" class="train-list"></div>
+  </div>
+
+  <div id="map"></div>
+
+  <div id="stats-panel">
+    <div class="stat-label">Active Trains</div>
+    <div class="stat-value" id="train-count">0</div>
+  </div>
+
+  <!-- Leaflet JS -->
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js?v=2"></script>
+
+  <!-- Socket.IO client -->
+  <script src="https://cdn.socket.io/4.7.5/socket.io.min.js?v=2"></script>
+
+  <script>
+    document.addEventListener("DOMContentLoaded", () => {
+      // --- MAP INITIALIZATION ---
+      // Initialize Leaflet map centered on Finland
+      const map = L.map("map", {
+        zoomControl: false
+      }).setView([62.5, 26.0], 5);
+
+      // Add zoom control to a less obstructive position
+      L.control.zoom({ position: 'bottomleft' }).addTo(map);
+
+      // Add a dark-themed base tile layer (CartoDB Dark Matter)
+      L.tileLayer("https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png", {
+        maxZoom: 18,
+        attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors &copy; <a href="https://carto.com/attributions">CARTO</a>'
+      }).addTo(map);
+
+      // Add OpenRailwayMap overlay to show tracks and infrastructure
+      L.tileLayer("https://{s}.tiles.openrailwaymap.org/standard/{z}/{x}/{y}.png", {
+        maxZoom: 19,
+        className: 'railway-layer',
+        attribution: 'Map data: &copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors | Map style: &copy; <a href="https://www.openrailwaymap.org">OpenRailwayMap</a> (CC-BY-SA)'
+      }).addTo(map);
+
+      // --- STATE MANAGEMENT ---
+      // Store marker references by train number for efficient updates
+      const trainMarkers = {};
+      // Store list element references for the sidebar
+      const trainListItems = {};
+      
+      const trainListContainer = document.getElementById("train-list");
+      const searchInput = document.getElementById("train-search");
+      let searchQuery = "";
+
+      // --- SHUTDOWN LOGIC ---
+      // Handles the remote termination of the Flask server
+      const shutdownBtn = document.getElementById("shutdown-btn");
+      if (shutdownBtn) {
+        shutdownBtn.addEventListener("click", () => {
+          if (confirm("Are you sure you want to shut down the server and close the app?")) {
+            fetch("/shutdown", { method: "POST" })
+              .then(() => {
+                window.close();
+                // Fallback message if the browser prevents window.close()
+                document.body.innerHTML = `
+                  <div style="display: flex; height: 100vh; width: 100vw; align-items: center; justify-content: center; flex-direction: column; background: var(--bg-color); color: var(--text-color); font-family: Inter, sans-serif;">
+                    <h1 style="color: #f85149; margin-bottom: 16px;">Server Shutdown</h1>
+                    <p>The backend server has been successfully terminated.</p>
+                    <p style="margin-top: 8px; color: #8b949e;">You may now safely close this browser tab.</p>
+                  </div>
+                `;
+              })
+              .catch(err => {
+                console.error("Shutdown failed:", err);
+                alert("Failed to shut down the server.");
+              });
+          }
+        });
+      }
+
+      // Search input handler to filter the sidebar list in real-time
+      searchInput.addEventListener("input", (e) => {
+        searchQuery = e.target.value.toLowerCase();
+        filterTrainList();
+      });
+
+      /**
+       * Filter the sidebar train list based on the current search query.
+       */
+      function filterTrainList() {
+        Object.values(trainListItems).forEach(item => {
+          if (item.searchString.includes(searchQuery)) {
+            item.element.style.display = 'flex';
+          } else {
+            item.element.style.display = 'none';
+          }
+        });
+      }
+      // --- SOCKET.IO SETUP ---
+      // Initialize WebSocket connection with fallback to long-polling
+      const socket = io({
+        transports: ['polling', 'websocket'],
+        reconnectionDelay: 1000,
+        reconnectionDelayMax: 5000
+      });
+      let firstLoad = true;
+
+      // --- UI Elements ---
+      const statusBadge = document.getElementById("status-badge");
+      const statusText = document.getElementById("status-text");
+      const trainCountEl = document.getElementById("train-count");
+      const loadingOverlay = document.getElementById("loading-overlay");
+      const loadingTitle = document.getElementById("loading-title");
+      const loadingSubtitle = document.getElementById("loading-subtitle");
+
+      /**
+       * Hide the loading overlay with a smooth fade-out effect.
+       */
+      const removeLoading = () => {
+        if (firstLoad) {
+          loadingOverlay.style.opacity = '0';
+          setTimeout(() => loadingOverlay.style.display = 'none', 500);
+          firstLoad = false;
+        }
+      };
+
+      // --- Socket.IO Event Handlers ---
+      socket.on("connect", () => {
+        statusBadge.classList.remove("disconnected");
+        statusText.textContent = "Live";
+        loadingTitle.textContent = "Connected!";
+        loadingSubtitle.textContent = "Waiting for initial train data payload...";
+        console.log("Connected via: " + socket.io.engine.transport.name);
+      });
+
+      socket.on("connection_status", (data) => {
+        console.log("Backend status:", data);
+        setTimeout(removeLoading, 1000);
+      });
+
+      socket.on("connect_error", (err) => {
+        console.error("Connection Error:", err.message);
+        statusBadge.classList.add("disconnected");
+        statusText.textContent = "Error";
+        loadingTitle.textContent = "Connection Refused";
+        loadingSubtitle.textContent = "Retrying in 2 seconds...";
+      });
+
+      socket.on("disconnect", () => {
+        statusBadge.classList.add("disconnected");
+        statusText.textContent = "Disconnected";
+        console.warn("Disconnected");
+      });
+
+      // Main data event: Receives an array of train objects from the server
+      socket.on("train_locations", (trains) => {
+        if (!Array.isArray(trains)) return;
+
+        removeLoading(); // Ensure overlay is gone
+
+        trainCountEl.textContent = trains.length;
+        const updatedTrainKeys = new Set();
+        const now = Date.now();
+
+        trains.forEach((train) => {
+          if (!train.location || !train.location.coordinates) return;
+
+          const coords = train.location.coordinates;
+          const [lon, lat] = coords;
+
+          if (typeof lat !== "number" || typeof lon !== "number") return;
+
+          const origin = train.origin || "Unknown";
+          const destination = train.destination || "Unknown";
+          const trainNumber = train.trainNumber || "Unknown";
+          const speed = train.speed || 0;
+          const key = String(trainNumber);
+
+          updatedTrainKeys.add(key);
+
+          const trainCategory = train.trainCategory && train.trainCategory !== "Unknown" ? train.trainCategory : "N/A";
+          const departureDate = train.departureDate && train.departureDate !== "Unknown" ? train.departureDate : "N/A";
+          const trainTypeStr = train.trainType && train.trainType !== "Unknown" ? train.trainType : "";
+          const commuterLine = train.commuterLineID ? " " + train.commuterLineID : "";
+          const operator = train.operatorShortCode && train.operatorShortCode !== "Unknown" ? train.operatorShortCode.toUpperCase() : "";
+          
+          let lastSeenFormatted = "N/A";
+          if (train.timestamp) {
+            const dateObj = new Date(train.timestamp);
+            lastSeenFormatted = dateObj.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+          }
+
+          const subTitleParts = [trainTypeStr + commuterLine, operator].filter(Boolean);
+          const subTitle = subTitleParts.join(" | ");
+
+          // Build the HTML content for the map marker popup
+          const popupHtml = `
+            <div class="popup-title">
+              Train #${trainNumber} 
+              ${subTitle ? `<span style="font-size: 0.8rem; font-weight: normal; margin-left: 8px; color: #8b949e;">${subTitle}</span>` : ''}
+            </div>
+            <div class="popup-content">
+              <div class="popup-route">
+                <span>${origin}</span>
+                <span class="popup-route-arrow">→</span>
+                <span>${destination}</span>
+              </div>
+              <div style="margin-top: 12px; display: grid; grid-template-columns: 1fr 1fr; gap: 10px; font-size: 0.8rem;">
+                <div>
+                  <span style="color: #8b949e; text-transform: uppercase; font-size: 0.65rem; letter-spacing: 0.05em;">Category</span><br/>
+                  <span style="color: var(--text-color);">${trainCategory}</span>
+                </div>
+                <div>
+                  <span style="color: #8b949e; text-transform: uppercase; font-size: 0.65rem; letter-spacing: 0.05em;">Date</span><br/>
+                  <span style="color: var(--text-color);">${departureDate}</span>
+                </div>
+                <div>
+                  <span style="color: #8b949e; text-transform: uppercase; font-size: 0.65rem; letter-spacing: 0.05em;">Speed</span><br/>
+                  <span style="color: var(--accent-color); font-weight: 700;">${speed} km/h</span>
+                </div>
+                <div>
+                  <span style="color: #8b949e; text-transform: uppercase; font-size: 0.65rem; letter-spacing: 0.05em;">Updated</span><br/>
+                  <span style="color: var(--text-color);">${lastSeenFormatted}</span>
+                </div>
+              </div>
+            </div>
+          `;
+
+          if (!trainMarkers[key]) {
+            const icon = L.divIcon({
+              className: 'custom-train-icon',
+              html: `<div class="train-badge">${trainNumber}</div>`,
+              iconSize: [32, 32],
+              iconAnchor: [16, 16]
+            });
+
+            const marker = L.marker([lat, lon], { icon: icon }).addTo(map);
+            marker.bindPopup(popupHtml, { minWidth: 240 });
+
+            trainMarkers[key] = {
+              marker: marker,
+              lastSeen: now
+            };
+          } else {
+            const markerData = trainMarkers[key];
+            markerData.marker.setLatLng([lat, lon]);
+            if (markerData.marker.isPopupOpen()) {
+              markerData.marker.setPopupContent(popupHtml);
+            } else {
+              markerData.marker.bindPopup(popupHtml, { minWidth: 240 });
+            }
+            markerData.lastSeen = now;
+          }
+
+          // Train List Item Logic
+          const searchString = `${trainNumber} ${origin} ${destination} ${trainCategory} ${operator}`.toLowerCase();
+          
+          if (!trainListItems[key]) {
+            const itemEl = document.createElement("div");
+            itemEl.className = "train-item";
+            itemEl.innerHTML = `
+              <div class="train-item-header">
+                <span class="train-item-title">Train #${trainNumber}</span>
+                <span class="train-item-speed">${speed} km/h</span>
+              </div>
+              <div class="train-item-route">
+                <span>${origin}</span>
+                <span style="color: var(--accent-color)">→</span>
+                <span>${destination}</span>
+              </div>
+              <div class="train-item-meta">
+                <span>${trainCategory}</span>
+                <span class="train-item-time">${lastSeenFormatted}</span>
+              </div>
+            `;
+            
+            trainListItems[key] = {
+              element: itemEl,
+              searchString: searchString,
+              lat: lat,
+              lon: lon,
+              speedEl: itemEl.querySelector(".train-item-speed"),
+              timeEl: itemEl.querySelector(".train-item-time"),
+              routeEl: itemEl.querySelector(".train-item-route")
+            };
+
+            itemEl.addEventListener("click", () => {
+              Object.values(trainListItems).forEach(item => item.element.classList.remove("active"));
+              itemEl.classList.add("active");
+              
+              const currentLat = trainListItems[key].lat;
+              const currentLon = trainListItems[key].lon;
+              
+              map.flyTo([currentLat, currentLon], 10, { duration: 1.5 });
+              map.once("moveend", () => {
+                if (trainMarkers[key] && trainMarkers[key].marker) {
+                  trainMarkers[key].marker.openPopup();
+                }
+              });
+            });
+
+            trainListContainer.prepend(itemEl);
+            // Update existing list item UI
+            const item = trainListItems[key];
+            item.searchString = searchString;
+            item.lat = lat;
+            item.lon = lon;
+            item.speedEl.textContent = `${speed} km/h`;
+            item.timeEl.textContent = lastSeenFormatted;
+            item.routeEl.innerHTML = `
+              <span>${origin}</span>
+              <span style="color: var(--accent-color)">→</span>
+              <span>${destination}</span>
+            `;
+          }
+        });
+
+        // --- CLEANUP ---
+        // Remove markers and list items for trains that are no longer in the live feed
+        Object.keys(trainMarkers).forEach(key => {
+          if (!updatedTrainKeys.has(key)) {
+            map.removeLayer(trainMarkers[key].marker);
+            delete trainMarkers[key];
+            
+            if (trainListItems[key]) {
+              trainListItems[key].element.remove();
+              delete trainListItems[key];
+            }
+          }
+        });
+
+        if (searchQuery) filterTrainList();
+      });
+    });
+  </script>
+</body>
+
+</html>

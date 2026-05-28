@@ -1,0 +1,76 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Traffic Tracker Hub | Finland</title>
+  <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;600;700&display=swap" rel="stylesheet">
+  <style>
+    :root { --bg: #0d1117; --text: #e6edf3; --glass: rgba(22, 27, 34, 0.8); --border: rgba(255, 255, 255, 0.1); }
+    body { background: var(--bg); color: var(--text); font-family: 'Outfit', sans-serif; margin: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; min-height: 100vh; overflow: hidden; }
+    .hero { text-align: center; margin-bottom: 3rem; animation: fadeIn 1s ease-out; }
+    .hero h1 { font-size: 3.5rem; margin: 0; background: linear-gradient(90deg, #2f81f7, #00f2ff); -webkit-background-clip: text; background-clip: text; -webkit-text-fill-color: transparent; }
+    .hero p { color: #8b949e; font-size: 1.2rem; }
+    .grid { display: grid; grid-template-columns: repeat(3, 300px); gap: 2rem; }
+    .card { background: var(--glass); backdrop-filter: blur(12px); border: 1px solid var(--border); border-radius: 20px; padding: 2rem; text-align: center; transition: all 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275); cursor: pointer; text-decoration: none; color: inherit; position: relative; overflow: hidden; }
+    .card:hover { transform: translateY(-10px) scale(1.02); border-color: var(--accent, #2f81f7); box-shadow: 0 10px 40px rgba(0,0,0,0.4); }
+    .card h2 { margin: 1rem 0 0.5rem; }
+    .card p { font-size: 0.9rem; color: #8b949e; line-height: 1.4; }
+    .badge { position: absolute; top: 1rem; right: 1rem; font-size: 0.6rem; text-transform: uppercase; padding: 4px 8px; border-radius: 10px; background: rgba(46, 160, 67, 0.15); color: #3fb950; font-weight: 700; }
+    @keyframes fadeIn { from { opacity: 0; transform: translateY(20px); } to { opacity: 1; transform: translateY(0); } }
+  </style>
+</head>
+<body>
+  <div class="hero">
+    <h1>Traffic Tracker Hub</h1>
+    <p>Choose a dedicated tracking module to begin monitoring Finnish traffic.</p>
+  </div>
+  <div class="grid">
+    {% for t in trackers %}
+    <a href="http://127.0.0.1:{{ t.port }}" target="_blank" class="card" style="--accent: {{ t.color }}">
+      <div class="badge">Online</div>
+      <div style="font-size: 3rem; color: {{ t.color }}">
+        {% if t.id == 'rail' %}🚆{% elif t.id == 'road' %}🚜{% elif t.id == 'marine' %}🚢{% else %}✈️{% endif %}
+      </div>
+      <h2>{{ t.name }}</h2>
+      <p>{{ t.desc }}</p>
+      <div style="margin-top: 1rem; font-size: 0.8rem; opacity: 0.5;">Port: {{ t.port }}</div>
+    </a>
+    {% endfor %}
+  </div>
+    <div style="margin-top: 4rem; color: #8b949e; font-size: 0.8rem;">
+      <p>Remember to shut down processes after use to save resources.</p>
+      <button onclick="shutdownAll()" style="background: #f85149; color: white; border: none; padding: 10px 20px; border-radius: 8px; font-weight: 600; cursor: pointer; margin-top: 10px; transition: opacity 0.2s;">
+        Shut Down All Trackers
+      </button>
+    </div>
+  </div>
+  
+  <script>
+    async function shutdownAll() {
+      if (!confirm("Are you sure you want to shut down all tracker processes?")) return;
+      
+      const btn = document.querySelector('button');
+      btn.disabled = true;
+      btn.textContent = "Shutting down...";
+      btn.style.opacity = "0.5";
+
+      try {
+        const response = await fetch('/shutdown_all', { method: 'POST' });
+        if (response.ok) {
+          alert("Shutdown command sent. All processes are terminating.");
+          window.close();
+        } else {
+          alert("Failed to send shutdown command.");
+          btn.disabled = false;
+          btn.textContent = "Shut Down All Trackers";
+          btn.style.opacity = "1";
+        }
+      } catch (err) {
+        console.error(err);
+        alert("Shutdown initiated. The connection will be lost.");
+      }
+    }
+  </script>
+</body>
+</html>
