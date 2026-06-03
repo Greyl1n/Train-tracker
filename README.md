@@ -1,0 +1,66 @@
+# Traffic Tracker Hub
+
+Real-time traffic monitoring for Finland — tracking trains, road maintenance vehicles, maritime vessels, and aircraft. Built with Flask, Socket.IO, and Leaflet.js.
+
+## Trackers
+
+| Module | Port | Data Source | Description |
+|--------|------|-------------|-------------|
+| **Hub** | 5000 | — | Central portal linking all trackers with a shutdown-all button |
+| **Rail** | 5001 | [Digitraffic Rata](https://rata.digitraffic.fi) | Live train locations, categories (commuter, cargo, long-distance), speeds |
+| **Road** | 5002 | [Digitraffic Tie](https://tie.digitraffic.fi) | Maintenance vehicle tracking with task labels (ploughing, salting, etc.) |
+| **Marine** | 5003 | [Digitraffic Meri](https://meri.digitraffic.fi) | AIS vessel positions, types, categories, and metadata |
+| **Flight** | 5004 | [OpenSky Network](https://opensky-network.org) | Aircraft over Finland with altitude, speed, heading |
+
+Each tracker provides a real-time map, live list, and statistics with time-series charts.
+
+## Quick Start
+
+```bash
+pip install flask flask-socketio requests
+
+# Launch all services
+python launch_all.py
+```
+
+Open [http://127.0.0.1:5000](http://127.0.0.1:5000) for the hub portal.
+
+To launch individually:
+
+```bash
+python rail_tracker.py    # port 5001
+python road_tracker.py    # port 5002
+python marine_tracker.py  # port 5003
+python flight_tracker.py  # port 5004
+python hub.py             # port 5000
+```
+
+Click **Shut Down All Trackers** on the hub, or hit `Ctrl+C` in the `launch_all.py` terminal.
+
+## Project Structure
+
+```
+Tracker/
+├── hub.py                 # Central Flask app (port 5000)
+├── rail_tracker.py        # Rail tracker (port 5001)
+├── road_tracker.py        # Road maintenance tracker (port 5002)
+├── marine_tracker.py      # Marine AIS tracker (port 5003)
+├── flight_tracker.py      # Flight tracker (port 5004)
+├── launch_all.py          # Launches all services simultaneously
+├── templates/
+│   ├── hub_index.html
+│   ├── rail_index.html
+│   ├── road_index.html
+│   ├── marine_index.html
+│   └── flight_index.html
+├── archive/               # Historical versions
+├── scratch/               # Development/testing scripts
+└── walkthrough.md         # Dev notes on statistics features
+```
+
+## Tech Stack
+
+- **Backend**: Python, Flask, Flask-SocketIO
+- **Frontend**: Leaflet.js (maps), Chart.js (time-series charts)
+- **Real-time**: WebSocket via Socket.IO — clients receive live location and statistics updates as background threads poll the APIs
+- **APIs**: [Digitraffic](https://www.digitraffic.fi) (rail, road, marine), [OpenSky Network](https://opensky-network.org) (flight)
