@@ -64,3 +64,14 @@ Tracker/
 - **Frontend**: Leaflet.js (maps), Chart.js (time-series charts)
 - **Real-time**: WebSocket via Socket.IO — clients receive live location and statistics updates as background threads poll the APIs
 - **APIs**: [Digitraffic](https://www.digitraffic.fi) (rail, road, marine), [OpenSky Network](https://opensky-network.org) (flight)
+
+## Credits & Data Sources
+
+This project uses the following public data APIs:
+
+- **Digitraffic** (`https://rata.digitraffic.fi`, `https://tie.digitraffic.fi`, `https://meri.digitraffic.fi`) — open data provided by the Finnish Transport Infrastructure Agency (Väylävirasto). Provides real-time train locations, road maintenance vehicle tracking, and maritime AIS vessel data. Licensed under [CC 4.0 BY](https://creativecommons.org/licenses/by/4.0/).
+- **OpenSky Network** (`https://opensky-network.org/api`) — real-time aircraft position data from a community-driven network of ADS-B receivers. Data is provided under the [OpenSky License](https://opensky-network.org/about/data-license).
+
+See the respective API documentation for usage limits and attribution requirements.
+
+- **Map tiles** — [CartoDB](https://carto.com/attributions) provides the dark theme base map tiles (`{s}.basemaps.cartocdn.com/dark_all`). Map data © [OpenStreetMap](https://www.openstreetmap.org/copyright) contributors (ODbL).
