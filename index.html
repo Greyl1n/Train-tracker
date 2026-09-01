@@ -25,6 +25,7 @@
       --text-muted: #8b949e;
       --accent: #2f81f7;
       --rail-color: #2f81f7;
+      --bus-color: #007ac9;
       --road-color: #ffa500;
       --marine-color: #00f2ff;
       --flight-color: #ffae00;
@@ -127,6 +128,7 @@
       box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
     }
     .mode-btn.active[data-mode="rail"] { background: var(--rail-color); }
+    .mode-btn.active[data-mode="bus"] { background: var(--bus-color); color: #fff; }
     .mode-btn.active[data-mode="road"] { background: var(--road-color); color: #111; }
     .mode-btn.active[data-mode="marine"] { background: var(--marine-color); color: #111; }
     .mode-btn.active[data-mode="flight"] { background: var(--flight-color); color: #111; }
@@ -486,6 +488,29 @@
     .marker-badge.tram { background: #3fb950; }
     .marker-badge.cargo { background: #ffa500; }
     .marker-badge.other { background: #6e7681; }
+    .marker-badge.bus { background: var(--bus-color); }
+    .marker-badge.trunk { background: #ff6319; }
+    .marker-badge.foli { background: #fdb913; color: #0d1117; border-color: #0d1117; }
+
+    /* Dimming & Highlighting for focused routes */
+    .marker-dimmed {
+      opacity: 0.18 !important;
+      filter: grayscale(85%) contrast(80%) !important;
+      transition: opacity 0.3s ease, filter 0.3s ease !important;
+    }
+    .marker-highlighted {
+      opacity: 1.0 !important;
+      filter: drop-shadow(0 0 8px rgba(0, 122, 201, 0.95)) !important;
+      transform: scale(1.18) !important;
+      z-index: 1000 !important;
+      transition: all 0.3s ease !important;
+    }
+    .marker-highlighted .marker-badge.trunk {
+      filter: drop-shadow(0 0 10px rgba(255, 99, 25, 0.95)) !important;
+    }
+    .marker-highlighted .marker-badge.foli {
+      filter: drop-shadow(0 0 10px rgba(253, 185, 19, 0.95)) !important;
+    }
 
     .track-label {
       background: rgba(0, 212, 255, 0.85);
@@ -555,6 +580,7 @@
 
       <div class="mode-nav">
         <button class="mode-btn active" data-mode="rail" onclick="switchMode('rail')">🚆 Rail</button>
+        <button class="mode-btn" data-mode="bus" onclick="switchMode('bus')">🚌 Bus</button>
         <button class="mode-btn" data-mode="road" onclick="switchMode('road')">🚜 Road</button>
         <button class="mode-btn" data-mode="marine" onclick="switchMode('marine')">🚢 Marine</button>
         <button class="mode-btn" data-mode="flight" onclick="switchMode('flight')">✈️ Flight</button>
@@ -583,6 +609,14 @@
         </div>
         <input type="text" id="search-input" class="search-box" placeholder="Search...">
         <div class="filter-chips" id="filter-chips-container"></div>
+        <div id="digitransit-banner" style="display:none; font-size:0.68rem; background:rgba(0,122,201,0.12); border:1px solid rgba(0,122,201,0.3); border-radius:6px; padding:5px 8px; color:#8b949e;">
+          <span style="color:var(--text); font-weight:600;">🚌 Feeds:</span> Live HSL MQTT & Föli SIRI active.
+          <a href="#" onclick="toggleDigitransitKey(event)" style="color:var(--bus-color); text-decoration:none; font-weight:600; margin-left:4px;">API Key</a>
+          <div id="digitransit-key-box" style="display:none; margin-top:6px;">
+            <input type="password" id="digitransit-key-input" placeholder="Paste digitransit-subscription-key..." style="width:100%; font-size:0.7rem; padding:4px 6px; background:#0d1117; border:1px solid var(--border); border-radius:4px; color:#fff; outline:none;" onchange="saveDigitransitKey(this.value)">
+            <div style="font-size:0.62rem; color:#8b949e; margin-top:3px;">Free key from <a href="https://portal-api.digitransit.fi/" target="_blank" style="color:var(--bus-color)">portal-api.digitransit.fi</a></div>
+          </div>
+        </div>
       </div>
 
       <div class="tabs">
@@ -634,11 +668,13 @@
       historyMaxPoints: 40,
       intervals: {
         rail: 15000,
+        bus: 15000,
         road: 60000,
         marine: 60000,
         flight: 25000,
         cleanupHSL: 30000
       },
+      trunkLines: ['20', '30', '40', '500', '510', '520', '530', '550', '560', '570', '600'],
       taskLabels: {
         "LEVELLING_GRAVEL_ROAD_SURFACE": "Gravel Levelling",
         "PAVING": "Paving",
@@ -674,15 +710,17 @@
     // Filters state per mode
     const activeFilters = {
       rail: new Set(['train', 'metro', 'tram', 'cargo', 'other']),
+      bus: new Set(['all', 'hsl', 'foli', 'trunk']),
       road: new Set(['all']),
       marine: new Set(['Cargo', 'Commercial', 'Private', 'Other']),
       flight: new Set(['airborne', 'ground']),
-      all: new Set(['rail', 'road', 'marine', 'flight'])
+      all: new Set(['rail', 'bus', 'road', 'marine', 'flight'])
     };
 
     // Rolling time-series history
     const historyData = {
       rail: { times: [], counts: [] },
+      bus: { times: [], counts: [] },
       road: { times: [], counts: [] },
       marine: { times: [], counts: [] },
       flight: { times: [], counts: [] },
@@ -701,7 +739,8 @@
       roadVehicles: [],
       marineMetadata: {},
       marineVessels: [],
-      flightPlanes: INITIAL_FLIGHTS.slice()
+      flightPlanes: INITIAL_FLIGHTS.slice(),
+      busVehicles: {}
     };
 
     /* ==========================================================================
@@ -731,19 +770,40 @@
       trackLabels: L.layerGroup(),
       rail: L.layerGroup().addTo(map),
       hsl: L.layerGroup().addTo(map),
+      bus: L.layerGroup(),
+      routeLayer: L.layerGroup().addTo(map),
       road: L.layerGroup(),
       marine: L.layerGroup(),
       flight: L.layerGroup()
     };
 
     // Active marker dictionary: [id] -> L.Marker / L.CircleMarker
+    const routeShapesCache = {};
     const markers = {
       rail: {},
       hsl: {},
+      bus: {},
       road: {},
       marine: {},
       flight: {}
     };
+
+    // Close popup & reset dimming on background click or popup close
+    map.on('click', () => {
+      if (selectedVehicleId) {
+        selectedVehicleId = null;
+        resetDimming();
+        renderLiveList(getVisibleItems());
+      }
+    });
+
+    map.on('popupclose', () => {
+      if (selectedVehicleId) {
+        selectedVehicleId = null;
+        resetDimming();
+        renderLiveList(getVisibleItems());
+      }
+    });
 
     /* ==========================================================================
        3. CHART.JS INITIALIZATION
@@ -968,10 +1028,22 @@
       });
     }
 
-    // --- B. HSL MQTT CLIENT (Metro & Tram) ---
+    // --- B. HSL MQTT CLIENT (Buses, Metro & Tram) ---
+    let hslMqttClient = null;
     function initHslMqtt() {
       try {
-        const client = new Paho.MQTT.Client("mqtt.hsl.fi", 443, "client-" + Math.random().toString(36).substring(7));
+        // Paho JS constructor: (host, port, path, clientId)
+        // Path MUST be "/" on mqtt.hsl.fi (default "/mqtt" returns 404!)
+        const clientId = "hsl-client-" + Math.random().toString(36).substring(2, 10);
+        const client = new Paho.MQTT.Client("mqtt.hsl.fi", 443, "/", clientId);
+        hslMqttClient = client;
+
+        client.onConnectionLost = (responseObject) => {
+          if (responseObject && responseObject.errorCode !== 0) {
+            console.warn("HSL MQTT connection lost, reconnecting in 5s...", responseObject.errorMessage);
+            setTimeout(initHslMqtt, 5000);
+          }
+        };
 
         client.onMessageArrived = (message) => {
           try {
@@ -979,11 +1051,60 @@
             const vp = payload.VP;
             if (!vp || !vp.lat || !vp.long) return;
 
-            const mode = message.destinationName.split('/')[5]; // metro or tram
+            // HSL topic: /hfp/v2/journey/ongoing/vp/{transport_type}/{operator_id}/{vehicle_number}/{route_id}/{direction_id}/{headsign}/...
+            const topicParts = message.destinationName.split('/');
+            const mode = topicParts.includes('bus') ? 'bus' : topicParts.includes('tram') ? 'tram' : topicParts.includes('metro') ? 'metro' : (topicParts[6] || 'bus');
+            const rawHeadsign = topicParts[11] || '';
+            const headsign = rawHeadsign ? decodeURIComponent(rawHeadsign).replace(/_/g, ' ') : '';
+            const routeId = topicParts[9] || '';
+            
+            if (mode === 'bus') {
+              const line = vp.desi || "??";
+              const id = `hsl-bus-${vp.veh}`;
+              const isTrunk = CONFIG.trunkLines.includes(line);
+              const speed = Math.round((vp.spd || 0) * 3.6);
+              const dl = vp.dl !== undefined ? vp.dl : 0;
+              const delayStr = dl > 60 ? `+${Math.round(dl/60)}m late` : dl < -60 ? `${Math.round(Math.abs(dl)/60)}m early` : 'On time';
+              const destText = headsign ? ` → ${headsign}` : '';
+              const route = `${isTrunk ? '🟠 Trunk ' : ''}Line ${line}${destText}`;
+
+              const existing = appState.busVehicles[id];
+              const path = existing && existing.path ? existing.path : [];
+              path.push([vp.lat, vp.long]);
+              if (path.length > 25) path.shift();
+
+              const item = {
+                id,
+                type: 'bus',
+                region: 'hsl',
+                isTrunk,
+                line,
+                veh: vp.veh,
+                routeId,
+                destination: headsign || 'Helsinki Region',
+                route,
+                operator: vp.oper ? `Operator #${vp.oper}` : 'HSL Helsinki',
+                speed,
+                lat: vp.lat,
+                lon: vp.long,
+                heading: vp.hdg || 0,
+                delay: dl,
+                delayStr,
+                path,
+                timestamp: Date.now()
+              };
+
+              appState.busVehicles[id] = item;
+              updateBusMarker(item);
+              return;
+            }
+
             const id = `hsl-${vp.veh}`;
             const speed = Math.round((vp.spd || 0) * 3.6);
             const line = vp.desi || "??";
-            const route = `${mode.charAt(0).toUpperCase() + mode.slice(1)} Line ${line}`;
+            const modeLabel = mode.charAt(0).toUpperCase() + mode.slice(1);
+            const destText = headsign ? ` → ${headsign}` : '';
+            const route = `${modeLabel} Line ${line}${destText}`;
 
             const item = {
               id,
@@ -1035,20 +1156,25 @@
 
         client.connect({
           useSSL: true,
-          timeout: 10,
+          timeout: 12,
+          keepAliveInterval: 30,
+          cleanSession: true,
           onSuccess: () => {
-            console.log("Connected to HSL Real-time MQTT");
+            console.log("Connected to HSL Real-time MQTT successfully via wss://mqtt.hsl.fi:443/");
             client.subscribe("/hfp/v2/journey/ongoing/vp/metro/#");
             client.subscribe("/hfp/v2/journey/ongoing/vp/tram/#");
+            client.subscribe("/hfp/v2/journey/ongoing/vp/bus/#");
           },
           onFailure: (err) => {
-            console.warn("HSL MQTT connect notice:", err);
+            console.warn("HSL MQTT connect notice, retrying in 6s:", err);
+            setTimeout(initHslMqtt, 6000);
           }
         });
 
         // Cleanup stale HSL markers
         setInterval(() => {
           const now = Date.now();
+          // Cleanup stale metro/tram
           Object.keys(appState.hslVehicles).forEach(id => {
             if (now - appState.hslVehicles[id].timestamp > 45000) {
               if (markers.hsl[id]) {
@@ -1058,9 +1184,123 @@
               delete appState.hslVehicles[id];
             }
           });
+          // Cleanup stale buses
+          Object.keys(appState.busVehicles).forEach(id => {
+            if (now - appState.busVehicles[id].timestamp > 45000) {
+              if (markers.bus[id]) {
+                layerGroups.bus.removeLayer(markers.bus[id]);
+                delete markers.bus[id];
+              }
+              delete appState.busVehicles[id];
+            }
+          });
+          recordHistory('bus', Object.keys(appState.busVehicles).length);
+          if (currentMode === 'bus' || currentMode === 'all') renderUI();
         }, CONFIG.intervals.cleanupHSL);
       } catch (e) {
         console.warn("HSL MQTT Init error:", e);
+      }
+    }
+
+    // --- B2. BUS MARKERS & TURKU (FÖLI) SIRI API ---
+    function updateBusMarker(b) {
+      const pos = [b.lat, b.lon];
+      const isSelected = selectedVehicleId === b.id;
+      const badgeClass = b.isTrunk ? 'trunk' : b.region === 'foli' ? 'foli' : 'bus';
+
+      if (!markers.bus[b.id]) {
+        const icon = L.divIcon({
+          className: 'custom-div-icon',
+          html: `<div class="marker-badge ${badgeClass}" style="font-size:0.58rem; width:26px; height:26px;">${b.line}</div>`,
+          iconSize: [26, 26],
+          iconAnchor: [13, 13]
+        });
+
+        const m = L.marker(pos, { icon })
+          .bindPopup(`
+            <div class="popup-title" style="color:${b.isTrunk ? '#ff6319' : b.region === 'foli' ? '#fdb913' : 'var(--bus-color)'}">
+              🚌 ${b.route}
+            </div>
+            <div class="popup-content-text">
+              Region: <b>${b.region === 'hsl' ? 'Helsinki Metropolitan (HSL)' : 'Turku Region (Föli)'}</b><br/>
+              Vehicle: #${b.veh}<br/>
+              ${b.speed ? `Speed: <b>${b.speed} km/h</b><br/>` : ''}
+              Schedule: <b>${b.delayStr}</b> (${b.delay > 0 ? '+' : ''}${b.delay}s)<br/>
+              ${b.origin ? `From: ${b.origin}<br/>` : ''}
+              ${b.destination ? `To: ${b.destination}<br/>` : ''}
+              Operator: ${b.operator}<br/>
+              Updated: ${new Date(b.timestamp).toLocaleTimeString()}
+            </div>
+          `);
+
+        // If a bus is currently selected, check if this new bus belongs to that line or should be dimmed
+        if (selectedVehicleId && appState.busVehicles[selectedVehicleId]) {
+          const selLine = appState.busVehicles[selectedVehicleId].line;
+          if (b.line === selLine) {
+            m.setOpacity(1.0);
+            m.setZIndexOffset(1000);
+          } else {
+            m.setOpacity(0.18);
+            m.setZIndexOffset(0);
+          }
+        }
+
+        m.on('click', () => selectVehicle(b.id));
+        markers.bus[b.id] = m;
+        layerGroups.bus.addLayer(m);
+      } else {
+        markers.bus[b.id].setLatLng(pos);
+      }
+    }
+
+    async function fetchFoliBuses() {
+      try {
+        const res = await fetch("https://data.foli.fi/siri/vm");
+        if (!res.ok) return;
+        const json = await res.json();
+        const vehicles = json.result?.vehicles || {};
+        const now = Date.now();
+
+        Object.values(vehicles).forEach(v => {
+          if (!v.latitude || !v.longitude) return;
+          const line = v.publishedlinename || v.lineref || "??";
+          const id = `foli-bus-${v.vehicleref || Math.random()}`;
+          const dl = v.delaysecs || 0;
+          const delayStr = dl > 60 ? `+${Math.round(dl/60)}m late` : dl < -60 ? `${Math.round(Math.abs(dl)/60)}m early` : 'On time';
+          const route = `${v.originname || 'Turku'} → ${v.destinationname || 'Destination'}`;
+
+          const item = {
+            id,
+            type: 'bus',
+            region: 'foli',
+            isTrunk: false,
+            line,
+            veh: v.vehicleref,
+            routeref: v.__routeref,
+            tripref: v.__tripref,
+            operator: 'Föli Turku',
+            route: `Line ${line}: ${route}`,
+            origin: v.originname || '',
+            destination: v.destinationname || '',
+            speed: 0,
+            lat: v.latitude,
+            lon: v.longitude,
+            heading: 0,
+            delay: dl,
+            delayStr,
+            timestamp: now
+          };
+
+          appState.busVehicles[id] = item;
+          updateBusMarker(item);
+        });
+
+        recordHistory('bus', Object.keys(appState.busVehicles).length);
+        if (currentMode === 'bus' || currentMode === 'all') {
+          renderUI();
+        }
+      } catch (err) {
+        console.warn("Föli bus fetch notice:", err);
       }
     }
 
@@ -1098,7 +1338,21 @@
         appState.roadVehicles = vehicles;
         updateRoadMarkers(vehicles);
         recordHistory('road', vehicles.length);
-        if (currentMode === 'road' || currentMode === 'all') {
+        if (currentMode === 'bus' || currentMode === 'all') {
+        const buses = Object.values(appState.busVehicles).filter(b => {
+          if (currentMode === 'bus') {
+            if (activeFilters.bus.has('trunk') && b.isTrunk) return true;
+            if (activeFilters.bus.has(b.region)) return true;
+            if (activeFilters.bus.has('all')) return true;
+            return false;
+          }
+          if (query && !(`${b.line} ${b.route} ${b.veh} ${b.region}`).toLowerCase().includes(query)) return false;
+          return true;
+        });
+        list = list.concat(buses);
+      }
+
+      if (currentMode === 'road' || currentMode === 'all') {
           renderUI();
         }
       } catch (err) {
@@ -1425,6 +1679,7 @@
       // Record total for all
       if (mode !== 'all') {
         const totalAll = appState.railTrains.length + Object.keys(appState.hslVehicles).length +
+                         Object.keys(appState.busVehicles).length +
                          appState.roadVehicles.length + appState.marineVessels.length + appState.flightPlanes.length;
         const allHist = historyData.all;
         allHist.times.push(now);
@@ -1439,6 +1694,7 @@
     function switchMode(mode) {
       currentMode = mode;
       selectedVehicleId = null;
+      resetDimming();
 
       // Update button styles
       document.querySelectorAll('.mode-btn').forEach(btn => {
@@ -1450,10 +1706,16 @@
         if (!map.hasLayer(layerGroups.tracks)) map.addLayer(layerGroups.tracks);
         if (!map.hasLayer(layerGroups.rail)) map.addLayer(layerGroups.rail);
         if (!map.hasLayer(layerGroups.hsl)) map.addLayer(layerGroups.hsl);
+        if (!map.hasLayer(layerGroups.bus)) map.addLayer(layerGroups.bus);
         if (!map.hasLayer(layerGroups.road)) map.addLayer(layerGroups.road);
         if (!map.hasLayer(layerGroups.marine)) map.addLayer(layerGroups.marine);
         if (!map.hasLayer(layerGroups.flight)) map.addLayer(layerGroups.flight);
       } else {
+        if (mode === 'bus') {
+          if (!map.hasLayer(layerGroups.bus)) map.addLayer(layerGroups.bus);
+        } else {
+          if (map.hasLayer(layerGroups.bus)) map.removeLayer(layerGroups.bus);
+        }
         // Toggle specific layers
         if (mode === 'rail') {
           if (!map.hasLayer(layerGroups.tracks)) map.addLayer(layerGroups.tracks);
@@ -1487,6 +1749,7 @@
       // Update accent color css var
       const colors = {
         rail: 'var(--rail-color)',
+        bus: 'var(--bus-color)',
         road: 'var(--road-color)',
         marine: 'var(--marine-color)',
         flight: 'var(--flight-color)',
@@ -1515,7 +1778,26 @@
       const container = document.getElementById('filter-chips-container');
       container.innerHTML = '';
 
-      if (currentMode === 'marine') {
+      if (currentMode === 'bus') {
+        const items = [
+          { id: 'all', label: 'All Buses' },
+          { id: 'hsl', label: 'Helsinki (HSL)' },
+          { id: 'foli', label: 'Turku (Föli)' },
+          { id: 'trunk', label: '🟠 Trunk Lines' }
+        ];
+        items.forEach(item => {
+          const chip = document.createElement('div');
+          chip.className = `filter-chip ${activeFilters.bus.has(item.id) ? 'active' : ''}`;
+          chip.textContent = item.label;
+          chip.onclick = () => {
+            if (activeFilters.bus.has(item.id)) activeFilters.bus.delete(item.id);
+            else activeFilters.bus.add(item.id);
+            chip.classList.toggle('active');
+            renderUI();
+          };
+          container.appendChild(chip);
+        });
+      } else if (currentMode === 'marine') {
         ['Cargo', 'Commercial', 'Private', 'Other'].forEach(cat => {
           const chip = document.createElement('div');
           chip.className = `filter-chip ${activeFilters.marine.has(cat) ? 'active' : ''}`;
@@ -1586,6 +1868,20 @@
         list = list.concat(trains, hslList);
       }
 
+      if (currentMode === 'bus' || currentMode === 'all') {
+        const buses = Object.values(appState.busVehicles).filter(b => {
+          if (currentMode === 'bus') {
+            if (activeFilters.bus.has('trunk') && b.isTrunk) return true;
+            if (activeFilters.bus.has(b.region)) return true;
+            if (activeFilters.bus.has('all')) return true;
+            return false;
+          }
+          if (query && !(`${b.line} ${b.route} ${b.veh} ${b.region}`).toLowerCase().includes(query)) return false;
+          return true;
+        });
+        list = list.concat(buses);
+      }
+
       if (currentMode === 'road' || currentMode === 'all') {
         const road = appState.roadVehicles.filter(v => {
           if (query && !(`${v.vehicleId} ${v.domain} ${v.tasks.join(' ')}`).toLowerCase().includes(query)) return false;
@@ -1622,6 +1918,7 @@
       // 1. Titles & Counts
       const titles = {
         rail: '🚆 Rail Tracker',
+        bus: '🚌 Bus Tracker Finland',
         road: '🚜 Road Maintenance',
         marine: '🚢 Marine AIS Tracker',
         flight: '✈️ Flight Tracker',
@@ -1632,11 +1929,38 @@
       const items = getVisibleItems();
       document.getElementById('sidebar-count').textContent = `${items.length} active`;
 
+      const digitransitBanner = document.getElementById('digitransit-banner');
+      if (digitransitBanner) {
+        digitransitBanner.style.display = currentMode === 'bus' ? 'block' : 'none';
+      }
+
       // 2. Render Live List
       renderLiveList(items);
 
       // 3. Render Statistics
       renderStatistics();
+    }
+
+    function toggleDigitransitKey(e) {
+      if (e) e.preventDefault();
+      const box = document.getElementById('digitransit-key-box');
+      if (box) {
+        box.style.display = box.style.display === 'none' ? 'block' : 'none';
+        const input = document.getElementById('digitransit-key-input');
+        if (box.style.display === 'block' && input) {
+          input.value = localStorage.getItem('digitransit_key') || '';
+          input.focus();
+        }
+      }
+    }
+
+    function saveDigitransitKey(val) {
+      if (val && val.trim()) {
+        localStorage.setItem('digitransit_key', val.trim());
+        alert("Digitransit API key saved in browser storage!");
+      } else {
+        localStorage.removeItem('digitransit_key');
+      }
     }
 
     function renderLiveList(items) {
@@ -1693,6 +2017,23 @@
               <span class="badge-pill">Delay: ${item.delay}</span>
             </div>
           `;
+        } else if (item.type === 'bus') {
+          const regionBadge = item.region === 'hsl' ? 'HSL Helsinki' : 'Föli Turku';
+          const trunkBadge = item.isTrunk ? '<span class="badge-pill" style="background:rgba(255,99,25,0.2);color:#ff6319;font-weight:700;">Trunk Line</span>' : '';
+          el.innerHTML = `
+            <div class="vehicle-top">
+              <div class="vehicle-title" style="color:${item.isTrunk ? '#ff6319' : item.region === 'foli' ? '#fdb913' : 'var(--bus-color)'}">
+                🚌 ${item.route}
+              </div>
+              <div class="vehicle-speed">${item.delayStr}</div>
+            </div>
+            <div class="vehicle-sub">${regionBadge} • Vehicle #${item.veh}${item.speed ? ` • ${item.speed} km/h` : ''}</div>
+            <div class="vehicle-meta">
+              <span class="badge-pill">${regionBadge}</span>
+              ${trunkBadge}
+              <span class="badge-pill">${item.operator}</span>
+            </div>
+          `;
         } else if (item.type === 'road') {
           el.innerHTML = `
             <div class="vehicle-top">
@@ -1743,14 +2084,195 @@
       }
     }
 
+
+    async function drawBusRoute(b) {
+      const routeLayer = layerGroups.routeLayer;
+      if (!routeLayer) return;
+      routeLayer.clearLayers();
+      if (!b) return;
+
+      if (b.region === 'foli') {
+        const routeref = b.routeref;
+        if (!routeref) return;
+
+        const cacheKey = `foli-${routeref}`;
+        let latlngs = routeShapesCache[cacheKey];
+
+        if (!latlngs) {
+          try {
+            const resTrips = await fetch(`https://data.foli.fi/gtfs/v0/trips/route/${routeref}`);
+            if (!resTrips.ok) return;
+            const trips = await resTrips.json();
+            const shapeId = trips[0]?.shape_id;
+            if (!shapeId) return;
+
+            const resShape = await fetch(`https://data.foli.fi/gtfs/shapes/${shapeId}`);
+            if (!resShape.ok) return;
+            const shape = await resShape.json();
+            latlngs = shape.map(pt => [pt.lat, pt.lon]);
+            routeShapesCache[cacheKey] = latlngs;
+          } catch (e) {
+            console.warn("Could not load Föli route shape:", e);
+            return;
+          }
+        }
+
+        if (latlngs && latlngs.length > 0) {
+          const glow = L.polyline(latlngs, {
+            color: '#ffffff',
+            weight: 7,
+            opacity: 0.35,
+            smoothFactor: 1
+          });
+          const line = L.polyline(latlngs, {
+            color: '#fdb913',
+            weight: 4,
+            opacity: 0.9,
+            smoothFactor: 1
+          });
+
+          routeLayer.addLayer(glow);
+          routeLayer.addLayer(line);
+
+          // Add Start & End terminal pins
+          const startPt = latlngs[0];
+          const endPt = latlngs[latlngs.length - 1];
+          const startIcon = L.divIcon({
+            className: '',
+            html: `<div style="background:#3fb950;border-radius:50%;width:12px;height:12px;border:2px solid #fff;box-shadow:0 0 6px #000;"></div>`,
+            iconAnchor: [6, 6]
+          });
+          const endIcon = L.divIcon({
+            className: '',
+            html: `<div style="background:#f85149;border-radius:50%;width:12px;height:12px;border:2px solid #fff;box-shadow:0 0 6px #000;"></div>`,
+            iconAnchor: [6, 6]
+          });
+
+          routeLayer.addLayer(L.marker(startPt, { icon: startIcon }).bindPopup(`<b>Terminal:</b> ${b.origin || 'Origin'}`));
+          routeLayer.addLayer(L.marker(endPt, { icon: endIcon }).bindPopup(`<b>Terminal:</b> ${b.destination || 'Destination'}`));
+        }
+      } else if (b.region === 'hsl') {
+        const key = localStorage.getItem('digitransit_key');
+        const cacheKey = `hsl-${b.line}`;
+        let latlngs = routeShapesCache[cacheKey];
+
+        if (key && !latlngs) {
+          try {
+            const query = `{ routes(name: "${b.line}") { patterns { geometry { lat lon } } } }`;
+            const res = await fetch("https://api.digitransit.fi/routing/v2/hsl/gtfs/v1", {
+              method: "POST",
+              headers: {
+                "Content-Type": "application/json",
+                "digitransit-subscription-key": key
+              },
+              body: JSON.stringify({ query })
+            });
+            if (res.ok) {
+              const json = await res.json();
+              const patterns = json.data?.routes?.[0]?.patterns || [];
+              if (patterns.length > 0) {
+                latlngs = patterns[0].geometry.map(pt => [pt.lat, pt.lon]);
+                routeShapesCache[cacheKey] = latlngs;
+              }
+            }
+          } catch (e) {
+            console.warn("Digitransit route query error:", e);
+          }
+        }
+
+        if (latlngs && latlngs.length > 0) {
+          const color = b.isTrunk ? '#ff6319' : 'var(--bus-color)';
+          const glow = L.polyline(latlngs, { color: '#ffffff', weight: 7, opacity: 0.35, smoothFactor: 1 });
+          const line = L.polyline(latlngs, { color, weight: 4, opacity: 0.9, smoothFactor: 1 });
+          routeLayer.addLayer(glow);
+          routeLayer.addLayer(line);
+        } else if (b.path && b.path.length > 1) {
+          const color = b.isTrunk ? '#ff6319' : 'var(--bus-color)';
+          const line = L.polyline(b.path, { color, weight: 4, opacity: 0.85, dashArray: '6, 6' });
+          routeLayer.addLayer(line);
+        }
+      }
+    }
+
+    function applyLineDimming(selectedLine) {
+      if (!selectedLine) return;
+
+      // 1. Dim all buses except the ones on this line
+      Object.entries(markers.bus || {}).forEach(([bId, m]) => {
+        const b = appState.busVehicles[bId];
+        const isSameLine = b && b.line === selectedLine;
+        const iconEl = m.getElement ? m.getElement() : null;
+
+        if (isSameLine) {
+          m.setOpacity(1.0);
+          m.setZIndexOffset(1000);
+          if (iconEl) {
+            iconEl.classList.remove('marker-dimmed');
+            iconEl.classList.add('marker-highlighted');
+          }
+        } else {
+          m.setOpacity(0.18);
+          m.setZIndexOffset(0);
+          if (iconEl) {
+            iconEl.classList.add('marker-dimmed');
+            iconEl.classList.remove('marker-highlighted');
+          }
+        }
+      });
+
+      // 2. Dim other layers (trains, road, marine, flight)
+      ['rail', 'hsl', 'road', 'marine', 'flight'].forEach(layerKey => {
+        Object.values(markers[layerKey] || {}).forEach(m => {
+          if (m.setOpacity) m.setOpacity(0.12);
+          else if (m.setStyle) m.setStyle({ opacity: 0.12, fillOpacity: 0.12 });
+          const el = m.getElement ? m.getElement() : null;
+          if (el) el.classList.add('marker-dimmed');
+        });
+      });
+    }
+
+    function resetDimming() {
+      // Restore all buses to normal opacity
+      Object.values(markers.bus || {}).forEach(m => {
+        m.setOpacity(1.0);
+        m.setZIndexOffset(0);
+        const el = m.getElement ? m.getElement() : null;
+        if (el) {
+          el.classList.remove('marker-dimmed', 'marker-highlighted');
+        }
+      });
+
+      // Restore other vehicle groups
+      ['rail', 'hsl', 'road', 'marine', 'flight'].forEach(layerKey => {
+        Object.values(markers[layerKey] || {}).forEach(m => {
+          if (m.setOpacity) m.setOpacity(1.0);
+          else if (m.setStyle) m.setStyle({ opacity: 1.0, fillOpacity: 0.75 });
+          const el = m.getElement ? m.getElement() : null;
+          if (el) el.classList.remove('marker-dimmed');
+        });
+      });
+
+      // Clear route line
+      if (layerGroups.routeLayer) {
+        layerGroups.routeLayer.clearLayers();
+      }
+    }
     function selectVehicle(id, flyTo = false) {
       selectedVehicleId = id;
+
+      const selectedBus = appState.busVehicles[id];
+      if (selectedBus) {
+        drawBusRoute(selectedBus);
+        applyLineDimming(selectedBus.line);
+      } else {
+        resetDimming();
+      }
 
       // Find marker
       let targetMarker = null;
       let pos = null;
 
-      for (const group of ['rail', 'hsl', 'road', 'marine', 'flight']) {
+      for (const group of ['rail', 'hsl', 'bus', 'road', 'marine', 'flight']) {
         if (markers[group][id]) {
           targetMarker = markers[group][id];
           pos = targetMarker.getLatLng();
@@ -1771,7 +2293,32 @@
     function renderStatistics() {
       const breakdownEl = document.getElementById('stat-breakdown-content');
 
-      if (currentMode === 'rail') {
+      if (currentMode === 'bus') {
+        const buses = Object.values(appState.busVehicles);
+        const total = buses.length;
+        const hslCount = buses.filter(b => b.region === 'hsl').length;
+        const foliCount = buses.filter(b => b.region === 'foli').length;
+        const trunkCount = buses.filter(b => b.isTrunk).length;
+        const onTimeCount = buses.filter(b => b.delay >= -60 && b.delay <= 120).length;
+        const punctuality = total ? Math.round((onTimeCount / total) * 100) : 100;
+
+        document.getElementById('stat-main-title').textContent = 'Total Active Buses';
+        document.getElementById('stat-main-value').textContent = total;
+        document.getElementById('stat-sec1-title').textContent = 'Punctuality';
+        document.getElementById('stat-sec1-value').innerHTML = `${punctuality}<span style="font-size:0.75rem;font-weight:400">% on-time</span>`;
+        document.getElementById('stat-sec2-title').textContent = 'Trunk Lines';
+        document.getElementById('stat-sec2-value').textContent = trunkCount;
+
+        breakdownEl.innerHTML = `
+          <div><b>Helsinki Region (HSL):</b> ${hslCount}</div>
+          <div><b>Turku Region (Föli):</b> ${foliCount}</div>
+          <div><b style="color:#ff6319;">🟠 Orange Trunk Lines:</b> ${trunkCount}</div>
+          <div><b>On Time (-1m to +2m):</b> ${onTimeCount}</div>
+          <div style="margin-top:8px;font-size:0.72rem;color:var(--text-muted);border-top:1px solid var(--border);padding-top:6px;">
+            Streamed live from <b>HSL Real-Time MQTT</b> & <b>Föli SIRI API</b>. Compatible with Digitransit.
+          </div>
+        `;
+      } else if (currentMode === 'rail') {
         const total = appState.railTrains.length + Object.keys(appState.hslVehicles).length;
         const speeds = appState.railTrains.map(t => t.speed).filter(s => s > 0);
         const avgSpeed = speeds.length ? Math.round(speeds.reduce((a,b)=>a+b,0)/speeds.length) : 0;
@@ -1861,10 +2408,11 @@
         `;
       } else if (currentMode === 'all') {
         const totalRail = appState.railTrains.length + Object.keys(appState.hslVehicles).length;
+        const totalBus = Object.keys(appState.busVehicles).length;
         const totalRoad = appState.roadVehicles.length;
         const totalMarine = appState.marineVessels.length;
         const totalFlight = appState.flightPlanes.length;
-        const grandTotal = totalRail + totalRoad + totalMarine + totalFlight;
+        const grandTotal = totalRail + totalBus + totalRoad + totalMarine + totalFlight;
 
         document.getElementById('stat-main-title').textContent = 'Grand Total Active Traffic';
         document.getElementById('stat-main-value').textContent = grandTotal;
@@ -1875,6 +2423,7 @@
 
         breakdownEl.innerHTML = `
           <div><b style="color:var(--rail-color)">🚆 Rail & Transit:</b> ${totalRail}</div>
+          <div><b style="color:var(--bus-color)">🚌 Buses (HSL & Föli):</b> ${totalBus}</div>
           <div><b style="color:var(--road-color)">🚜 Road Maintenance:</b> ${totalRoad}</div>
           <div><b style="color:var(--marine-color)">🚢 Maritime AIS:</b> ${totalMarine}</div>
           <div><b style="color:var(--flight-color)">✈️ Air Traffic:</b> ${totalFlight}</div>
@@ -1890,6 +2439,7 @@
       const hist = historyData[currentMode] || { times: [], counts: [] };
       const colors = {
         rail: { border: '#2f81f7', bg: 'rgba(47, 129, 247, 0.12)' },
+        bus: { border: '#007ac9', bg: 'rgba(0, 122, 201, 0.15)' },
         road: { border: '#ffa500', bg: 'rgba(255, 165, 0, 0.12)' },
         marine: { border: '#00f2ff', bg: 'rgba(0, 242, 255, 0.12)' },
         flight: { border: '#ffae00', bg: 'rgba(255, 174, 0, 0.12)' },
@@ -1911,6 +2461,7 @@
 
     function triggerRefresh() {
       fetchRailLocations();
+      fetchFoliBuses();
       fetchRoadData();
       fetchMarineLocations();
       fetchFlightData();
@@ -1943,6 +2494,7 @@
       // 2. Fetch active vehicle positions
       await Promise.allSettled([
         fetchRailLocations(),
+        fetchFoliBuses(),
         fetchRoadData(),
         fetchMarineLocations(),
         fetchFlightData()
@@ -1953,6 +2505,7 @@
 
       // 4. Register Polling Timers
       setInterval(fetchRailLocations, CONFIG.intervals.rail);
+      setInterval(fetchFoliBuses, CONFIG.intervals.bus);
       setInterval(fetchRoadData, CONFIG.intervals.road);
       setInterval(fetchMarineLocations, CONFIG.intervals.marine);
       setInterval(fetchFlightData, CONFIG.intervals.flight);

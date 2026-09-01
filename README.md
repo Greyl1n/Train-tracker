@@ -8,6 +8,7 @@ Real-time traffic monitoring for Finland — tracking trains, road maintenance v
 |--------|------|-------------|-------------|
 | **Hub** | 5000 | — | Central portal linking all trackers with a shutdown-all button |
 | **Rail** | 5001 | [Digitraffic Rata](https://rata.digitraffic.fi) | Live train locations, categories (commuter, cargo, long-distance), speeds |
+| **Bus** | Monolith | [HSL MQTT](https://digitransit.fi) & [Föli](https://data.foli.fi) | Real-time buses across Helsinki & Turku regions with trunk line highlighting |
 | **Road** | 5002 | [Digitraffic Tie](https://tie.digitraffic.fi) | Maintenance vehicle tracking with task labels (ploughing, salting, etc.) |
 | **Marine** | 5003 | [Digitraffic Meri](https://meri.digitraffic.fi) | AIS vessel positions, types, categories, and metadata |
 | **Flight** | 5004 | [OpenSky Network](https://opensky-network.org) | Aircraft over Finland with altitude, speed, heading |
