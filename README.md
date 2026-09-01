@@ -14,7 +14,34 @@ Real-time traffic monitoring for Finland — tracking trains, road maintenance v
 
 Each tracker provides a real-time map, live list, and statistics with time-series charts.
 
-## Quick Start
+## 🚀 Standalone Monolith (GitHub Pages Deployment)
+
+The project includes a unified standalone monolith application in [`index.html`](index.html) that runs **100% client-side in the browser** without requiring Python or Flask.
+
+### How to Deploy to GitHub Pages in 3 Clicks:
+1. Push this repository to your GitHub account:
+   ```bash
+   git add index.html
+   git commit -m "Add GitHub Pages monolith tracker"
+   git push origin main
+   ```
+2. Navigate to your repository on GitHub and open **Settings** → **Pages**.
+3. Under **Build and deployment**:
+   - **Source**: `Deploy from a branch`
+   - **Branch**: `main` (or your default branch)
+   - **Folder**: `/ (root)`
+4. Click **Save**. Within ~1 minute, your live tracker is active at `https://<your-username>.github.io/<repo-name>/`!
+
+### Preview Monolith Locally
+Simply open [`index.html`](index.html) in any modern browser, or run a local static web server:
+```bash
+python -m http.server 8000
+```
+Then visit [http://127.0.0.1:8000](http://127.0.0.1:8000).
+
+---
+
+## Quick Start (Python Multi-Process Server)
 
 ```bash
 pip install flask flask-socketio requests
@@ -41,6 +68,7 @@ Click **Shut Down All Trackers** on the hub, or hit `Ctrl+C` in the `launch_all.
 
 ```
 Tracker/
+├── index.html             # Standalone monolith web app (GitHub Pages ready)
 ├── hub.py                 # Central Flask app (port 5000)
 ├── rail_tracker.py        # Rail tracker (port 5001)
 ├── road_tracker.py        # Road maintenance tracker (port 5002)

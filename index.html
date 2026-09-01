@@ -1,0 +1,1969 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>Traffic Tracker Finland | Live Monolith</title>
+  <meta name="description" content="Real-time multi-modal traffic monitoring for Finland: Trains, HSL Metro/Tram, Road Maintenance, Maritime AIS vessels, and Aircraft.">
+
+  <!-- Dependencies: Leaflet, Chart.js, Paho MQTT, Google Fonts -->
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/paho-mqtt/1.0.1/mqttws31.min.js"></script>
+
+  <style>
+    :root {
+      --bg-color: #0d1117;
+      --surface: #161b22;
+      --surface-glass: rgba(22, 27, 34, 0.88);
+      --border: rgba(255, 255, 255, 0.12);
+      --text: #e6edf3;
+      --text-muted: #8b949e;
+      --accent: #2f81f7;
+      --rail-color: #2f81f7;
+      --road-color: #ffa500;
+      --marine-color: #00f2ff;
+      --flight-color: #ffae00;
+      --success: #3fb950;
+      --danger: #f85149;
+    }
+
+    * { box-sizing: border-box; }
+    html, body {
+      height: 100%;
+      margin: 0;
+      padding: 0;
+      font-family: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      background: var(--bg-color);
+      color: var(--text);
+      overflow: hidden;
+      -webkit-font-smoothing: antialiased;
+    }
+
+    #app {
+      position: relative;
+      width: 100vw;
+      height: 100vh;
+      overflow: hidden;
+    }
+
+    /* Top Navigation Header */
+    header {
+      position: absolute;
+      top: 0;
+      left: 0;
+      right: 0;
+      height: 64px;
+      z-index: 1000;
+      padding: 0 1.25rem;
+      background: var(--surface-glass);
+      backdrop-filter: blur(14px);
+      -webkit-backdrop-filter: blur(14px);
+      border-bottom: 1px solid var(--border);
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 1rem;
+    }
+
+    .brand {
+      display: flex;
+      align-items: center;
+      gap: 0.6rem;
+      font-weight: 700;
+      font-size: 1.1rem;
+      white-space: nowrap;
+      user-select: none;
+    }
+    .brand-badge {
+      font-size: 0.65rem;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      padding: 2px 6px;
+      border-radius: 6px;
+      background: rgba(47, 129, 247, 0.18);
+      color: var(--accent);
+      border: 1px solid rgba(47, 129, 247, 0.3);
+    }
+
+    /* Mode Navigation Tabs */
+    .mode-nav {
+      display: flex;
+      align-items: center;
+      background: rgba(0, 0, 0, 0.35);
+      padding: 3px;
+      border-radius: 10px;
+      border: 1px solid var(--border);
+      gap: 3px;
+      overflow-x: auto;
+    }
+
+    .mode-btn {
+      background: transparent;
+      border: none;
+      color: var(--text-muted);
+      padding: 6px 12px;
+      border-radius: 7px;
+      font-size: 0.82rem;
+      font-weight: 600;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      white-space: nowrap;
+      transition: all 0.2s ease;
+    }
+    .mode-btn:hover {
+      color: var(--text);
+      background: rgba(255, 255, 255, 0.06);
+    }
+    .mode-btn.active {
+      background: var(--accent);
+      color: #ffffff;
+      box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+    }
+    .mode-btn.active[data-mode="rail"] { background: var(--rail-color); }
+    .mode-btn.active[data-mode="road"] { background: var(--road-color); color: #111; }
+    .mode-btn.active[data-mode="marine"] { background: var(--marine-color); color: #111; }
+    .mode-btn.active[data-mode="flight"] { background: var(--flight-color); color: #111; }
+    .mode-btn.active[data-mode="all"] { background: linear-gradient(90deg, #2f81f7, #00f2ff); color: #fff; }
+
+    /* Header Actions */
+    .header-actions {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+    .status-pill {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      font-size: 0.8rem;
+      font-weight: 600;
+      color: var(--success);
+      background: rgba(63, 185, 80, 0.12);
+      border: 1px solid rgba(63, 185, 80, 0.25);
+      padding: 4px 10px;
+      border-radius: 20px;
+    }
+    .pulse-dot {
+      width: 7px;
+      height: 7px;
+      border-radius: 50%;
+      background: var(--success);
+      box-shadow: 0 0 6px var(--success);
+      animation: pulse 2s infinite;
+    }
+    @keyframes pulse {
+      0% { transform: scale(0.95); opacity: 0.8; }
+      50% { transform: scale(1.3); opacity: 1; }
+      100% { transform: scale(0.95); opacity: 0.8; }
+    }
+
+    .btn-refresh {
+      background: rgba(255, 255, 255, 0.08);
+      border: 1px solid var(--border);
+      color: var(--text);
+      padding: 6px 12px;
+      border-radius: 8px;
+      font-size: 0.8rem;
+      font-weight: 600;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      gap: 5px;
+      transition: background 0.2s;
+    }
+    .btn-refresh:hover { background: rgba(255, 255, 255, 0.15); }
+
+    .sidebar-toggle-btn {
+      display: none;
+      background: rgba(255, 255, 255, 0.08);
+      border: 1px solid var(--border);
+      color: var(--text);
+      padding: 6px 10px;
+      border-radius: 8px;
+      font-size: 1rem;
+      cursor: pointer;
+    }
+
+    /* Sidebar Container */
+    #sidebar {
+      position: absolute;
+      top: 76px;
+      left: 1rem;
+      bottom: 1rem;
+      width: 340px;
+      max-width: calc(100vw - 2rem);
+      background: var(--surface-glass);
+      backdrop-filter: blur(14px);
+      -webkit-backdrop-filter: blur(14px);
+      border: 1px solid var(--border);
+      border-radius: 14px;
+      z-index: 1000;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+      box-shadow: 0 12px 36px rgba(0, 0, 0, 0.45);
+      transition: transform 0.3s ease, opacity 0.3s ease;
+    }
+
+    .sidebar-header {
+      padding: 0.85rem 1rem 0.6rem;
+      border-bottom: 1px solid var(--border);
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+
+    .sidebar-title-row {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+    .sidebar-title {
+      font-weight: 700;
+      font-size: 1rem;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+    .sidebar-count {
+      font-size: 0.75rem;
+      background: rgba(255, 255, 255, 0.08);
+      padding: 2px 7px;
+      border-radius: 10px;
+      color: var(--text-muted);
+    }
+
+    .search-box {
+      width: 100%;
+      padding: 8px 12px;
+      background: rgba(0, 0, 0, 0.28);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      color: white;
+      font-size: 0.85rem;
+      outline: none;
+      transition: border-color 0.2s;
+    }
+    .search-box:focus { border-color: var(--accent); }
+
+    /* Filters row */
+    .filter-chips {
+      display: flex;
+      gap: 6px;
+      flex-wrap: wrap;
+    }
+    .filter-chip {
+      font-size: 0.7rem;
+      padding: 3px 8px;
+      border-radius: 6px;
+      background: rgba(255, 255, 255, 0.05);
+      border: 1px solid var(--border);
+      color: var(--text-muted);
+      cursor: pointer;
+      user-select: none;
+      transition: all 0.2s;
+    }
+    .filter-chip.active {
+      background: rgba(47, 129, 247, 0.2);
+      border-color: var(--accent);
+      color: #fff;
+    }
+
+    /* Sidebar Tabs */
+    .tabs {
+      display: flex;
+      border-bottom: 1px solid var(--border);
+      background: rgba(0, 0, 0, 0.15);
+    }
+    .tab {
+      flex: 1;
+      text-align: center;
+      padding: 0.65rem 0.5rem;
+      cursor: pointer;
+      color: var(--text-muted);
+      font-weight: 600;
+      font-size: 0.82rem;
+      border-bottom: 2px solid transparent;
+      transition: all 0.2s;
+    }
+    .tab.active {
+      color: var(--text);
+      border-bottom-color: var(--accent);
+      background: rgba(255, 255, 255, 0.02);
+    }
+
+    /* Live List Panel */
+    #list-panel {
+      flex: 1;
+      overflow-y: auto;
+      padding: 0.6rem;
+      display: flex;
+      flex-direction: column;
+      gap: 0.4rem;
+    }
+
+    .vehicle-item {
+      padding: 0.75rem;
+      border-radius: 9px;
+      background: rgba(255, 255, 255, 0.03);
+      border: 1px solid transparent;
+      cursor: pointer;
+      transition: all 0.2s ease;
+    }
+    .vehicle-item:hover {
+      background: rgba(255, 255, 255, 0.07);
+      border-color: rgba(255, 255, 255, 0.1);
+      transform: translateY(-1px);
+    }
+    .vehicle-item.active {
+      background: rgba(47, 129, 247, 0.15);
+      border-color: var(--accent);
+    }
+    .vehicle-top {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+      margin-bottom: 4px;
+    }
+    .vehicle-title {
+      font-weight: 600;
+      font-size: 0.88rem;
+      color: var(--accent);
+    }
+    .vehicle-speed {
+      font-size: 0.7rem;
+      font-weight: 600;
+      color: var(--success);
+      background: rgba(63, 185, 80, 0.15);
+      padding: 2px 6px;
+      border-radius: 8px;
+    }
+    .vehicle-sub {
+      font-size: 0.78rem;
+      color: var(--text);
+      margin-bottom: 3px;
+    }
+    .vehicle-meta {
+      font-size: 0.7rem;
+      color: var(--text-muted);
+      display: flex;
+      gap: 6px;
+      flex-wrap: wrap;
+    }
+    .badge-pill {
+      font-size: 0.65rem;
+      padding: 1px 6px;
+      border-radius: 6px;
+      background: rgba(255, 255, 255, 0.08);
+      color: var(--text-muted);
+    }
+
+    /* Stats Panel */
+    #stats-panel {
+      display: none;
+      flex: 1;
+      overflow-y: auto;
+      padding: 0.85rem;
+      gap: 0.75rem;
+      flex-direction: column;
+    }
+    #stats-panel.active { display: flex; }
+
+    .stat-box {
+      background: rgba(0, 0, 0, 0.25);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 0.85rem;
+    }
+    .stat-title {
+      font-size: 0.7rem;
+      color: var(--text-muted);
+      text-transform: uppercase;
+      letter-spacing: 0.8px;
+      margin-bottom: 0.35rem;
+      font-weight: 600;
+    }
+    .stat-value {
+      font-size: 1.45rem;
+      font-weight: 800;
+      color: var(--text);
+    }
+    .stat-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 0.6rem;
+    }
+    .category-breakdown {
+      font-size: 0.8rem;
+      line-height: 1.5;
+    }
+
+    /* Loading Bar */
+    .loading-bar {
+      position: absolute;
+      top: 64px;
+      left: 0;
+      right: 0;
+      height: 3px;
+      background: rgba(255, 255, 255, 0.05);
+      z-index: 1001;
+      overflow: hidden;
+      display: none;
+    }
+    .loading-bar.active { display: block; }
+    .loading-bar-fill {
+      width: 100%;
+      height: 100%;
+      background: var(--accent);
+      animation: loading-sweep 1.4s infinite linear;
+    }
+    @keyframes loading-sweep {
+      0% { transform: translateX(-100%); }
+      50% { transform: translateX(0%); }
+      100% { transform: translateX(100%); }
+    }
+
+    /* Leaflet Map */
+    #map {
+      width: 100%;
+      height: 100%;
+      background: #0b0e14;
+    }
+
+    /* Custom Leaflet Popups */
+    .leaflet-popup-content-wrapper {
+      background: var(--surface-glass);
+      color: var(--text);
+      backdrop-filter: blur(12px);
+      -webkit-backdrop-filter: blur(12px);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      box-shadow: 0 8px 30px rgba(0, 0, 0, 0.5);
+    }
+    .leaflet-popup-tip { background: var(--surface-glass); }
+    .popup-title {
+      font-weight: 700;
+      color: var(--accent);
+      font-size: 0.95rem;
+      margin-bottom: 6px;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+    .popup-content-text {
+      font-size: 0.8rem;
+      line-height: 1.45;
+    }
+    .popup-content-text hr {
+      border: 0;
+      border-top: 1px solid var(--border);
+      margin: 6px 0;
+    }
+
+    /* Markers */
+    .marker-badge {
+      color: white;
+      border-radius: 50%;
+      width: 26px;
+      height: 26px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 0.65rem;
+      font-weight: 700;
+      border: 2px solid white;
+      box-shadow: 0 2px 8px rgba(0, 0, 0, 0.5);
+    }
+    .marker-badge.train { background: var(--rail-color); }
+    .marker-badge.metro { background: #af52de; }
+    .marker-badge.tram { background: #3fb950; }
+    .marker-badge.cargo { background: #ffa500; }
+    .marker-badge.other { background: #6e7681; }
+
+    .track-label {
+      background: rgba(0, 212, 255, 0.85);
+      color: #0d1117;
+      font-size: 0.62rem;
+      font-weight: 700;
+      padding: 1px 4px;
+      border-radius: 4px;
+      white-space: nowrap;
+      pointer-events: none;
+      border: 1px solid rgba(255, 255, 255, 0.4);
+    }
+
+    /* Road marker */
+    .road-marker {
+      font-size: 1.2rem;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      filter: drop-shadow(0 2px 4px rgba(0,0,0,0.6));
+    }
+
+    /* Flight icon */
+    .flight-marker-icon {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      transition: transform 0.2s;
+    }
+    .flight-marker-icon svg {
+      filter: drop-shadow(0 2px 4px rgba(0,0,0,0.7));
+    }
+
+    /* Responsive Design */
+    @media (max-width: 768px) {
+      header {
+        height: auto;
+        padding: 0.5rem 0.75rem;
+        flex-wrap: wrap;
+      }
+      .brand { font-size: 0.95rem; }
+      .mode-nav { order: 3; width: 100%; justify-content: space-around; margin-top: 4px; }
+      .sidebar-toggle-btn { display: block; }
+      #sidebar {
+        top: auto;
+        bottom: 0;
+        left: 0;
+        right: 0;
+        width: 100vw;
+        max-width: 100vw;
+        height: 52vh;
+        border-radius: 16px 16px 0 0;
+        transform: translateY(100%);
+      }
+      #sidebar.open { transform: translateY(0%); }
+    }
+  </style>
+</head>
+<body>
+  <div id="app">
+    <!-- Top Header -->
+    <header>
+      <div class="brand">
+        <span>🇫🇮 Traffic Tracker</span>
+        <span class="brand-badge">Finland</span>
+      </div>
+
+      <div class="mode-nav">
+        <button class="mode-btn active" data-mode="rail" onclick="switchMode('rail')">🚆 Rail</button>
+        <button class="mode-btn" data-mode="road" onclick="switchMode('road')">🚜 Road</button>
+        <button class="mode-btn" data-mode="marine" onclick="switchMode('marine')">🚢 Marine</button>
+        <button class="mode-btn" data-mode="flight" onclick="switchMode('flight')">✈️ Flight</button>
+        <button class="mode-btn" data-mode="all" onclick="switchMode('all')">🌐 All</button>
+      </div>
+
+      <div class="header-actions">
+        <div class="status-pill">
+          <div class="pulse-dot"></div>
+          <span id="header-status-text">Live</span>
+        </div>
+        <button class="btn-refresh" onclick="triggerRefresh()" title="Refresh live data">↻ Refresh</button>
+        <button class="sidebar-toggle-btn" onclick="toggleSidebar()" title="Toggle Sidebar">☰</button>
+      </div>
+    </header>
+
+    <!-- Loading Bar -->
+    <div id="loader" class="loading-bar"><div class="loading-bar-fill"></div></div>
+
+    <!-- Sidebar -->
+    <div id="sidebar">
+      <div class="sidebar-header">
+        <div class="sidebar-title-row">
+          <div class="sidebar-title" id="sidebar-title">🚆 Rail Tracker</div>
+          <div class="sidebar-count" id="sidebar-count">0 vehicles</div>
+        </div>
+        <input type="text" id="search-input" class="search-box" placeholder="Search...">
+        <div class="filter-chips" id="filter-chips-container"></div>
+      </div>
+
+      <div class="tabs">
+        <div class="tab active" onclick="switchTab('list')">Live List</div>
+        <div class="tab" onclick="switchTab('stats')">Statistics & Charts</div>
+      </div>
+
+      <!-- Live List Panel -->
+      <div id="list-panel"></div>
+
+      <!-- Statistics Panel -->
+      <div id="stats-panel">
+        <div class="stat-box">
+          <div class="stat-title" id="stat-main-title">Total Active</div>
+          <div class="stat-value" id="stat-main-value">0</div>
+        </div>
+        <div class="stat-grid" id="stat-secondary-grid">
+          <div class="stat-box">
+            <div class="stat-title" id="stat-sec1-title">Avg Speed</div>
+            <div class="stat-value" id="stat-sec1-value">0 <span style="font-size:0.75rem;font-weight:400">km/h</span></div>
+          </div>
+          <div class="stat-box">
+            <div class="stat-title" id="stat-sec2-title">Max Speed</div>
+            <div class="stat-value" id="stat-sec2-value">0 <span style="font-size:0.75rem;font-weight:400">km/h</span></div>
+          </div>
+        </div>
+        <div class="stat-box">
+          <div class="stat-title" id="stat-breakdown-title">Breakdown</div>
+          <div class="category-breakdown" id="stat-breakdown-content"></div>
+        </div>
+        <div class="stat-box">
+          <div class="stat-title" id="stat-chart-title">Activity Over Time</div>
+          <canvas id="historyChart" width="280" height="150"></canvas>
+        </div>
+      </div>
+    </div>
+
+    <!-- Fullscreen Map -->
+    <div id="map"></div>
+  </div>
+
+  <script>
+    /* ==========================================================================
+       1. INITIAL CONFIGURATION & CONSTANTS
+       ========================================================================== */
+    const CONFIG = {
+      defaultCenter: [64.5, 26.0],
+      defaultZoom: 6,
+      historyMaxPoints: 40,
+      intervals: {
+        rail: 15000,
+        road: 60000,
+        marine: 60000,
+        flight: 25000,
+        cleanupHSL: 30000
+      },
+      taskLabels: {
+        "LEVELLING_GRAVEL_ROAD_SURFACE": "Gravel Levelling",
+        "PAVING": "Paving",
+        "PATCHING": "Patching",
+        "SALTING": "Salting",
+        "SANDING": "Sanding",
+        "PLOUGHING_AND_SLUSH_REMOVAL": "Snow Ploughing",
+        "BRUSHING": "Brushing",
+        "DITCHING": "Ditching",
+        "DUST_BINDING_OF_GRAVEL_ROAD_SURFACE": "Dust Binding",
+        "MECHANICAL_CUT": "Mechanical Cut",
+        "CLEANSING_OF_BRIDGES": "Bridge Cleaning",
+        "LINE_SANDING": "Line Sanding",
+        "COMPACTION_BY_ROLLING": "Rolling",
+        "CRACK_FILLING": "Crack Filling",
+        "TRANSFER_OF_SNOW": "Snow Transfer",
+        "ROAD_MARKINGS": "Road Markings",
+        "CLIENTS_QUALITY_CONTROL": "Quality Control",
+        "HEATING": "Heating",
+        "LOWERING_OF_PERMAFROST": "Permafrost Lowering",
+        "FILLING_OF_GRAVEL_ROAD_SHOULDERS": "Shoulder Filling",
+        "ROAD_STATE_CHECKING": "Road Inspection",
+        "OTHER": "Other",
+        "UNKNOWN": "Unknown Task"
+      }
+    };
+
+    let currentMode = 'rail';
+    let currentTab = 'list';
+    let searchQuery = '';
+    let selectedVehicleId = null;
+
+    // Filters state per mode
+    const activeFilters = {
+      rail: new Set(['train', 'metro', 'tram', 'cargo', 'other']),
+      road: new Set(['all']),
+      marine: new Set(['Cargo', 'Commercial', 'Private', 'Other']),
+      flight: new Set(['airborne', 'ground']),
+      all: new Set(['rail', 'road', 'marine', 'flight'])
+    };
+
+    // Rolling time-series history
+    const historyData = {
+      rail: { times: [], counts: [] },
+      road: { times: [], counts: [] },
+      marine: { times: [], counts: [] },
+      flight: { times: [], counts: [] },
+      all: { times: [], counts: [] }
+    };
+
+    // Pre-loaded real flight snapshot (guarantees flights are visible immediately even under file:/// or CORS restrictions)
+    const INITIAL_FLIGHTS = [{"id": "flight-4aca84", "type": "flight", "icao24": "4aca84", "callsign": "NSZ83AH", "country": "Sweden", "lon": 21.3442, "lat": 59.1988, "alt": 11887, "onGround": false, "speed": 903, "heading": 59}, {"id": "flight-4aca83", "type": "flight", "icao24": "4aca83", "callsign": "NSZ2613", "country": "Sweden", "lon": 24.9707, "lat": 60.3178, "alt": 0, "onGround": true, "speed": 0, "heading": 242}, {"id": "flight-467891", "type": "flight", "icao24": "467891", "callsign": "T42", "country": "Finland", "lon": 24.9817, "lat": 60.3083, "alt": 0, "onGround": true, "speed": 0, "heading": 248}, {"id": "flight-4780ba", "type": "flight", "icao24": "4780ba", "callsign": "WIF28J", "country": "Norway", "lon": 19.6913, "lat": 69.5039, "alt": 3437, "onGround": false, "speed": 413, "heading": 246}, {"id": "flight-461f9c", "type": "flight", "icao24": "461f9c", "callsign": "FIN8WP", "country": "Finland", "lon": 24.9654, "lat": 60.3195, "alt": 0, "onGround": true, "speed": 6, "heading": 228}, {"id": "flight-461f9d", "type": "flight", "icao24": "461f9d", "callsign": "FIN5KA", "country": "Finland", "lon": 24.0047, "lat": 60.1139, "alt": 5745, "onGround": false, "speed": 581, "heading": 241}, {"id": "flight-461f6c", "type": "flight", "icao24": "461f6c", "callsign": "FIN8PX", "country": "Finland", "lon": 24.9734, "lat": 60.3169, "alt": 0, "onGround": true, "speed": 0, "heading": 332}, {"id": "flight-461f6d", "type": "flight", "icao24": "461f6d", "callsign": "FIN1EH", "country": "Finland", "lon": 22.6753, "lat": 59.0975, "alt": 9632, "onGround": false, "speed": 765, "heading": 225}, {"id": "flight-461f64", "type": "flight", "icao24": "461f64", "callsign": "FIN8DM", "country": "Finland", "lon": 24.9574, "lat": 60.3208, "alt": 0, "onGround": true, "speed": 28, "heading": 318}, {"id": "flight-461f62", "type": "flight", "icao24": "461f62", "callsign": "FIN5DL", "country": "Finland", "lon": 24.9688, "lat": 60.3227, "alt": 0, "onGround": true, "speed": 12, "heading": 332}, {"id": "flight-460c17", "type": "flight", "icao24": "460c17", "callsign": "OHEPB", "country": "Finland", "lon": 23.4824, "lat": 61.3858, "alt": 892, "onGround": false, "speed": 350, "heading": 245}, {"id": "flight-461f52", "type": "flight", "icao24": "461f52", "callsign": "FIN7WG", "country": "Finland", "lon": 22.8285, "lat": 59.7992, "alt": 8359, "onGround": false, "speed": 773, "heading": 242}, {"id": "flight-780c58", "type": "flight", "icao24": "780c58", "callsign": "CHH408", "country": "China", "lon": 30.2989, "lat": 62.6405, "alt": 11270, "onGround": false, "speed": 935, "heading": 86}, {"id": "flight-461fa8", "type": "flight", "icao24": "461fa8", "callsign": "FIN7BV", "country": "Finland", "lon": 19.1191, "lat": 59.9759, "alt": 11582, "onGround": false, "speed": 818, "heading": 267}, {"id": "flight-461fa5", "type": "flight", "icao24": "461fa5", "callsign": "FIN45M", "country": "Finland", "lon": 22.9408, "lat": 59.3227, "alt": 8192, "onGround": false, "speed": 777, "heading": 220}, {"id": "flight-461fa1", "type": "flight", "icao24": "461fa1", "callsign": "FIN5SK", "country": "Finland", "lon": 20.8928, "lat": 59.9033, "alt": 10036, "onGround": false, "speed": 777, "heading": 256}, {"id": "flight-7813c2", "type": "flight", "icao24": "7813c2", "callsign": "CCA939", "country": "China", "lon": 23.3709, "lat": 59.7041, "alt": 10363, "onGround": false, "speed": 792, "heading": 239}, {"id": "flight-4621df", "type": "flight", "icao24": "4621df", "callsign": "FNG8", "country": "Finland", "lon": 24.5927, "lat": 64.6376, "alt": 3040, "onGround": false, "speed": 383, "heading": 195}, {"id": "flight-4631cc", "type": "flight", "icao24": "4631cc", "callsign": "ABF1", "country": "Finland", "lon": 20.4609, "lat": 61.5288, "alt": 12497, "onGround": false, "speed": 764, "heading": 122}, {"id": "flight-463447", "type": "flight", "icao24": "463447", "callsign": "OHTUT", "country": "Finland", "lon": 25.7905, "lat": 61.1841, "alt": 511, "onGround": false, "speed": 228, "heading": 68}, {"id": "flight-45ab4f", "type": "flight", "icao24": "45ab4f", "callsign": "FIN3EF", "country": "Denmark", "lon": 23.7022, "lat": 60.0348, "alt": 5220, "onGround": false, "speed": 718, "heading": 242}, {"id": "flight-45ab23", "type": "flight", "icao24": "45ab23", "callsign": "FIN1HA", "country": "Denmark", "lon": 24.9679, "lat": 60.3236, "alt": 0, "onGround": true, "speed": 20, "heading": 332}, {"id": "flight-39e688", "type": "flight", "icao24": "39e688", "callsign": "AFR53EJ", "country": "France", "lon": 24.9814, "lat": 60.3105, "alt": 0, "onGround": true, "speed": 22, "heading": 335}, {"id": "flight-460561", "type": "flight", "icao24": "460561", "callsign": "OHCAZ", "country": "Finland", "lon": 25.7246, "lat": 62.1579, "alt": 1654, "onGround": false, "speed": 240, "heading": 48}, {"id": "flight-4601f4", "type": "flight", "icao24": "4601f4", "callsign": "FIN36J", "country": "Finland", "lon": 25.3356, "lat": 59.394, "alt": 5494, "onGround": false, "speed": 565, "heading": 351}, {"id": "flight-4601f3", "type": "flight", "icao24": "4601f3", "callsign": "FIN42T", "country": "Finland", "lon": 25.1327, "lat": 60.6193, "alt": 3581, "onGround": false, "speed": 395, "heading": 65}, {"id": "flight-4601f9", "type": "flight", "icao24": "4601f9", "callsign": "FIN6WR", "country": "Finland", "lon": 24.4472, "lat": 59.7029, "alt": 3620, "onGround": false, "speed": 402, "heading": 207}, {"id": "flight-4601f8", "type": "flight", "icao24": "4601f8", "callsign": "FIN4TA", "country": "Finland", "lon": 25.2528, "lat": 60.1111, "alt": 2743, "onGround": false, "speed": 381, "heading": 346}, {"id": "flight-4601f7", "type": "flight", "icao24": "4601f7", "callsign": "FIN593", "country": "Finland", "lon": 25.0136, "lat": 61.5323, "alt": 5486, "onGround": false, "speed": 476, "heading": 360}, {"id": "flight-4601fb", "type": "flight", "icao24": "4601fb", "callsign": "FIN1TJ", "country": "Finland", "lon": 22.8724, "lat": 62.0761, "alt": 5486, "onGround": false, "speed": 500, "heading": 328}, {"id": "flight-4ca801", "type": "flight", "icao24": "4ca801", "callsign": "RYR22PF", "country": "Ireland", "lon": 24.1128, "lat": 59.7774, "alt": 4907, "onGround": false, "speed": 667, "heading": 60}, {"id": "flight-78139f", "type": "flight", "icao24": "78139f", "callsign": "CHH754", "country": "China", "lon": 25.5995, "lat": 62.1047, "alt": 10668, "onGround": false, "speed": 902, "heading": 76}, {"id": "flight-4cafd8", "type": "flight", "icao24": "4cafd8", "callsign": "SAS711", "country": "Ireland", "lon": 24.725, "lat": 60.3167, "alt": 1463, "onGround": false, "speed": 391, "heading": 268}, {"id": "flight-4d24b4", "type": "flight", "icao24": "4d24b4", "callsign": "WZZ1JR", "country": "Malta", "lon": 24.8731, "lat": 59.4131, "alt": 114, "onGround": false, "speed": 270, "heading": 270}, {"id": "flight-461e21", "type": "flight", "icao24": "461e21", "callsign": "FIN3YX", "country": "Finland", "lon": 24.9344, "lat": 60.3597, "alt": 290, "onGround": false, "speed": 263, "heading": 153}, {"id": "flight-461e1d", "type": "flight", "icao24": "461e1d", "callsign": "FIN440", "country": "Finland", "lon": 25.179, "lat": 61.0958, "alt": 4237, "onGround": false, "speed": 600, "heading": 195}, {"id": "flight-461e1e", "type": "flight", "icao24": "461e1e", "callsign": "FIN4CL", "country": "Finland", "lon": 24.9093, "lat": 62.1977, "alt": 10866, "onGround": false, "speed": 855, "heading": 7}, {"id": "flight-461e1b", "type": "flight", "icao24": "461e1b", "callsign": "FIN9PE", "country": "Finland", "lon": 24.893, "lat": 61.8192, "alt": 10439, "onGround": false, "speed": 822, "heading": 3}, {"id": "flight-780ef8", "type": "flight", "icao24": "780ef8", "callsign": "CHH752", "country": "China", "lon": 20.6058, "lat": 62.021, "alt": 10668, "onGround": false, "speed": 877, "heading": 78}, {"id": "flight-461e14", "type": "flight", "icao24": "461e14", "callsign": "FIN4NR", "country": "Finland", "lon": 24.4374, "lat": 60.2913, "alt": 3406, "onGround": false, "speed": 596, "heading": 259}, {"id": "flight-461e16", "type": "flight", "icao24": "461e16", "callsign": "FIN79T", "country": "Finland", "lon": 24.8873, "lat": 60.3043, "alt": 472, "onGround": false, "speed": 296, "heading": 225}, {"id": "flight-4cad41", "type": "flight", "icao24": "4cad41", "callsign": "SAS1017", "country": "Ireland", "lon": 19.9685, "lat": 63.0395, "alt": 11582, "onGround": false, "speed": 782, "heading": 196}, {"id": "flight-151ffb", "type": "flight", "icao24": "151ffb", "callsign": "AFL1019", "country": "Russian Federation", "lon": 23.4966, "lat": 59.6026, "alt": 10660, "onGround": false, "speed": 874, "heading": 72}, {"id": "flight-4d2232", "type": "flight", "icao24": "4d2232", "callsign": "Unknown", "country": "Malta", "lon": 24.8174, "lat": 59.4151, "alt": 0, "onGround": true, "speed": 46, "heading": 90}, {"id": "flight-151ebd", "type": "flight", "icao24": "151ebd", "callsign": "SBI1212", "country": "Russian Federation", "lon": 23.7996, "lat": 59.651, "alt": 10668, "onGround": false, "speed": 876, "heading": 73}, {"id": "flight-4cac7a", "type": "flight", "icao24": "4cac7a", "callsign": "SAS1713", "country": "Ireland", "lon": 23.298, "lat": 59.3482, "alt": 9662, "onGround": false, "speed": 763, "heading": 242}, {"id": "flight-4607f9", "type": "flight", "icao24": "4607f9", "callsign": "OHDAN", "country": "Finland", "lon": 22.2734, "lat": 61.4426, "alt": 732, "onGround": false, "speed": 216, "heading": 216}];
+
+    // Cached raw data
+    const appState = {
+      stations: {},
+      trainMetadata: {},
+      railTrains: [],
+      hslVehicles: {},
+      roadVehicles: [],
+      marineMetadata: {},
+      marineVessels: [],
+      flightPlanes: INITIAL_FLIGHTS.slice()
+    };
+
+    /* ==========================================================================
+       2. MAP INITIALIZATION & LAYERS
+       ========================================================================== */
+    const map = L.map("map", {
+      zoomControl: false,
+      preferCanvas: true
+    }).setView(CONFIG.defaultCenter, CONFIG.defaultZoom);
+
+    // Free, high-performance dark tiles (Esri Dark Gray Canvas Base + Labels, no API key required)
+    L.tileLayer("https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Dark_Gray_Base/MapServer/tile/{z}/{y}/{x}", {
+      attribution: 'Tiles &copy; Esri &mdash; Esri, DeLorme, NAVTEQ',
+      maxZoom: 16
+    }).addTo(map);
+
+    L.tileLayer("https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Dark_Gray_Reference/MapServer/tile/{z}/{y}/{x}", {
+      attribution: '',
+      maxZoom: 16
+    }).addTo(map);
+
+    L.control.zoom({ position: 'bottomright' }).addTo(map);
+
+    // Layer groups
+    const layerGroups = {
+      tracks: L.layerGroup().addTo(map),
+      trackLabels: L.layerGroup(),
+      rail: L.layerGroup().addTo(map),
+      hsl: L.layerGroup().addTo(map),
+      road: L.layerGroup(),
+      marine: L.layerGroup(),
+      flight: L.layerGroup()
+    };
+
+    // Active marker dictionary: [id] -> L.Marker / L.CircleMarker
+    const markers = {
+      rail: {},
+      hsl: {},
+      road: {},
+      marine: {},
+      flight: {}
+    };
+
+    /* ==========================================================================
+       3. CHART.JS INITIALIZATION
+       ========================================================================== */
+    const ctx = document.getElementById('historyChart').getContext('2d');
+    const historyChart = new Chart(ctx, {
+      type: 'line',
+      data: {
+        labels: [],
+        datasets: [{
+          label: 'Count',
+          data: [],
+          borderColor: '#2f81f7',
+          backgroundColor: 'rgba(47, 129, 247, 0.12)',
+          fill: true,
+          tension: 0.35,
+          borderWidth: 2,
+          pointRadius: 2
+        }]
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: { legend: { display: false } },
+        scales: {
+          x: {
+            ticks: { color: '#8b949e', maxTicksLimit: 5, font: { size: 10 } },
+            grid: { color: 'rgba(255,255,255,0.05)' }
+          },
+          y: {
+            ticks: { color: '#8b949e', font: { size: 10 } },
+            grid: { color: 'rgba(255,255,255,0.05)' },
+            beginAtZero: true
+          }
+        }
+      }
+    });
+
+    /* ==========================================================================
+       4. DATA FETCHERS & API CLIENTS
+       ========================================================================== */
+    const loaderEl = document.getElementById("loader");
+    let loadingCount = 0;
+    function showLoader() {
+      loadingCount++;
+      loaderEl.classList.add("active");
+    }
+    function hideLoader() {
+      loadingCount = Math.max(0, loadingCount - 1);
+      if (loadingCount === 0) {
+        setTimeout(() => { if (loadingCount === 0) loaderEl.classList.remove("active"); }, 400);
+      }
+    }
+
+    // --- A. RAIL DATA ---
+    async function loadRailInfrastructure() {
+      try {
+        const res = await fetch("https://rata.digitraffic.fi/infra-api/latest/radat.geojson?srsName=crs:84");
+        if (!res.ok) return;
+        const geojson = await res.json();
+
+        L.geoJSON(geojson, {
+          style: { color: "#00d4ff", weight: 3, opacity: 0.75 },
+          onEachFeature: (feature, layer) => {
+            const name = feature.properties?.ratanumero || "";
+            if (name) {
+              layer.bindPopup(`<div class="popup-title">🚆 Railway: ${name}</div>`);
+              const line = feature.geometry?.coordinates?.[0];
+              if (line && line.length > 1) {
+                const mid = line[Math.floor(line.length / 2)];
+                const icon = L.divIcon({
+                  className: '',
+                  html: `<div class="track-label">${name}</div>`,
+                  iconAnchor: [12, 7]
+                });
+                layerGroups.trackLabels.addLayer(L.marker([mid[1], mid[0]], { icon, interactive: false }));
+              }
+            }
+          }
+        }).addTo(layerGroups.tracks);
+
+        map.on('zoomend', () => {
+          if (map.getZoom() >= 9 && (currentMode === 'rail' || currentMode === 'all')) {
+            if (!map.hasLayer(layerGroups.trackLabels)) map.addLayer(layerGroups.trackLabels);
+          } else {
+            if (map.hasLayer(layerGroups.trackLabels)) map.removeLayer(layerGroups.trackLabels);
+          }
+        });
+      } catch (err) {
+        console.warn("Rail infra load notice:", err);
+      }
+    }
+
+    async function fetchRailMetadata() {
+      try {
+        // 1. Stations
+        const stRes = await fetch("https://rata.digitraffic.fi/api/v1/metadata/stations");
+        if (stRes.ok) {
+          const stations = await stRes.json();
+          appState.stations = {};
+          stations.forEach(s => { appState.stations[s.stationShortCode] = s.stationName; });
+        }
+
+        // 2. Live Trains Metadata
+        const trRes = await fetch("https://rata.digitraffic.fi/api/v1/live-trains");
+        if (trRes.ok) {
+          const trains = await trRes.json();
+          const meta = {};
+          trains.forEach(t => {
+            const tNum = String(t.trainNumber);
+            const rows = t.timeTableRows || [];
+            const originCode = rows[0]?.stationShortCode;
+            const destCode = rows[rows.length - 1]?.stationShortCode;
+            meta[tNum] = {
+              origin: appState.stations[originCode] || originCode || "Unknown",
+              destination: appState.stations[destCode] || destCode || "Unknown",
+              trainType: t.trainType || "",
+              trainCategory: t.trainCategory || "Unknown",
+              commuterLineID: t.commuterLineID || "",
+              operatorShortCode: t.operatorShortCode || "",
+              departureDate: t.departureDate || ""
+            };
+          });
+          appState.trainMetadata = meta;
+        }
+      } catch (err) {
+        console.warn("Rail metadata notice:", err);
+      }
+    }
+
+    async function fetchRailLocations() {
+      showLoader();
+      try {
+        const res = await fetch("https://rata.digitraffic.fi/api/v1/train-locations/latest");
+        if (!res.ok) throw new Error("Rail API error: " + res.status);
+        const data = await res.json();
+
+        const enriched = data.map(train => {
+          const tNum = String(train.trainNumber);
+          const meta = appState.trainMetadata[tNum] || {};
+          let cat = meta.trainCategory || "Unknown";
+          let displayCat = "train";
+          if (cat === "Commuter") displayCat = "metro";
+          else if (cat === "Cargo") displayCat = "cargo";
+          else if (cat === "Shunting" || cat === "Locomotive") displayCat = "other";
+
+          return {
+            id: 'train-' + tNum,
+            type: 'rail',
+            trainNumber: train.trainNumber,
+            origin: meta.origin || "Unknown",
+            destination: meta.destination || "Unknown",
+            trainType: meta.trainType || "Train",
+            category: displayCat,
+            speed: train.speed || 0,
+            operator: meta.operatorShortCode || "VR",
+            commuterLineID: meta.commuterLineID || "",
+            departureDate: meta.departureDate || "",
+            timestamp: train.timestamp || "",
+            lat: train.location?.coordinates?.[1],
+            lon: train.location?.coordinates?.[0]
+          };
+        }).filter(t => t.lat && t.lon);
+
+        appState.railTrains = enriched;
+        updateRailMarkers(enriched);
+        recordHistory('rail', enriched.length + Object.keys(appState.hslVehicles).length);
+        if (currentMode === 'rail' || currentMode === 'all') {
+          renderUI();
+        }
+      } catch (err) {
+        console.error("Rail fetch error:", err);
+      } finally {
+        hideLoader();
+      }
+    }
+
+    function updateRailMarkers(trains) {
+      const activeIds = new Set();
+
+      trains.forEach(t => {
+        activeIds.add(t.id);
+        const pos = [t.lat, t.lon];
+        const route = `${t.origin} → ${t.destination}`;
+
+        if (!markers.rail[t.id]) {
+          const icon = L.divIcon({
+            className: 'custom-div-icon',
+            html: `<div class="marker-badge ${t.category}">${t.trainNumber}</div>`,
+            iconSize: [26, 26],
+            iconAnchor: [13, 13]
+          });
+
+          const m = L.marker(pos, { icon })
+            .bindPopup(`
+              <div class="popup-title">🚆 Train #${t.trainNumber}</div>
+              <div class="popup-content-text">
+                <b>${route}</b><br/>
+                Type: ${t.trainType}<br/>
+                Speed: <b>${t.speed} km/h</b><br/>
+                Operator: ${t.operator}<br/>
+                ${t.commuterLineID ? 'Line: ' + t.commuterLineID + '<br/>' : ''}
+                Departure: ${t.departureDate || 'N/A'}<br/>
+                ${t.timestamp ? 'Updated: ' + new Date(t.timestamp).toLocaleTimeString() : ''}
+              </div>
+            `);
+
+          m.on('click', () => selectVehicle(t.id));
+          markers.rail[t.id] = m;
+          layerGroups.rail.addLayer(m);
+        } else {
+          markers.rail[t.id].setLatLng(pos);
+        }
+      });
+
+      // Remove stale
+      Object.keys(markers.rail).forEach(id => {
+        if (!activeIds.has(id)) {
+          layerGroups.rail.removeLayer(markers.rail[id]);
+          delete markers.rail[id];
+        }
+      });
+    }
+
+    // --- B. HSL MQTT CLIENT (Metro & Tram) ---
+    function initHslMqtt() {
+      try {
+        const client = new Paho.MQTT.Client("mqtt.hsl.fi", 443, "client-" + Math.random().toString(36).substring(7));
+
+        client.onMessageArrived = (message) => {
+          try {
+            const payload = JSON.parse(message.payloadString);
+            const vp = payload.VP;
+            if (!vp || !vp.lat || !vp.long) return;
+
+            const mode = message.destinationName.split('/')[5]; // metro or tram
+            const id = `hsl-${vp.veh}`;
+            const speed = Math.round((vp.spd || 0) * 3.6);
+            const line = vp.desi || "??";
+            const route = `${mode.charAt(0).toUpperCase() + mode.slice(1)} Line ${line}`;
+
+            const item = {
+              id,
+              type: 'hsl',
+              mode,
+              veh: vp.veh,
+              line,
+              route,
+              speed,
+              lat: vp.lat,
+              lon: vp.long,
+              delay: vp.dl !== undefined ? `${vp.dl}s` : '0s',
+              timestamp: Date.now()
+            };
+
+            appState.hslVehicles[id] = item;
+
+            // Render marker
+            const pos = [item.lat, item.lon];
+            if (!markers.hsl[id]) {
+              const icon = L.divIcon({
+                className: 'custom-div-icon',
+                html: `<div class="marker-badge ${mode}">${line}</div>`,
+                iconSize: [26, 26],
+                iconAnchor: [13, 13]
+              });
+
+              const m = L.marker(pos, { icon })
+                .bindPopup(`
+                  <div class="popup-title">${mode === 'metro' ? '🚇' : '🚋'} ${route}</div>
+                  <div class="popup-content-text">
+                    Vehicle: #${vp.veh}<br/>
+                    Region: Helsinki (HSL)<br/>
+                    Speed: <b>${speed} km/h</b><br/>
+                    Delay: ${item.delay}
+                  </div>
+                `);
+
+              m.on('click', () => selectVehicle(id));
+              markers.hsl[id] = m;
+              layerGroups.hsl.addLayer(m);
+            } else {
+              markers.hsl[id].setLatLng(pos);
+            }
+          } catch (e) {
+            // Ignore parse errors on individual frames
+          }
+        };
+
+        client.connect({
+          useSSL: true,
+          timeout: 10,
+          onSuccess: () => {
+            console.log("Connected to HSL Real-time MQTT");
+            client.subscribe("/hfp/v2/journey/ongoing/vp/metro/#");
+            client.subscribe("/hfp/v2/journey/ongoing/vp/tram/#");
+          },
+          onFailure: (err) => {
+            console.warn("HSL MQTT connect notice:", err);
+          }
+        });
+
+        // Cleanup stale HSL markers
+        setInterval(() => {
+          const now = Date.now();
+          Object.keys(appState.hslVehicles).forEach(id => {
+            if (now - appState.hslVehicles[id].timestamp > 45000) {
+              if (markers.hsl[id]) {
+                layerGroups.hsl.removeLayer(markers.hsl[id]);
+                delete markers.hsl[id];
+              }
+              delete appState.hslVehicles[id];
+            }
+          });
+        }, CONFIG.intervals.cleanupHSL);
+      } catch (e) {
+        console.warn("HSL MQTT Init error:", e);
+      }
+    }
+
+    // --- C. ROAD MAINTENANCE DATA ---
+    async function fetchRoadData() {
+      showLoader();
+      try {
+        const res = await fetch("https://tie.digitraffic.fi/api/maintenance/v1/tracking/routes/latest");
+        if (!res.ok) throw new Error("Road API error: " + res.status);
+        const json = await res.json();
+        const features = json.features || [];
+
+        const vehicles = [];
+        features.forEach(feat => {
+          const geom = feat.geometry;
+          const props = feat.properties || {};
+          if (geom?.type === "Point" && geom.coordinates?.length >= 2) {
+            const rawTasks = props.tasks || [];
+            const readableTasks = rawTasks.map(t => CONFIG.taskLabels[t] || t.replace(/_/g, ' '));
+            vehicles.push({
+              id: 'road-' + (props.id || Math.random()),
+              type: 'road',
+              vehicleId: props.id,
+              lat: geom.coordinates[1],
+              lon: geom.coordinates[0],
+              domain: props.domain || "general",
+              source: props.source || "Unknown",
+              tasks: readableTasks,
+              primaryTask: readableTasks[0] || "Maintenance",
+              timestamp: props.time || props.created || ""
+            });
+          }
+        });
+
+        appState.roadVehicles = vehicles;
+        updateRoadMarkers(vehicles);
+        recordHistory('road', vehicles.length);
+        if (currentMode === 'road' || currentMode === 'all') {
+          renderUI();
+        }
+      } catch (err) {
+        console.error("Road fetch error:", err);
+      } finally {
+        hideLoader();
+      }
+    }
+
+    function updateRoadMarkers(vehicles) {
+      const activeIds = new Set();
+
+      vehicles.forEach(v => {
+        activeIds.add(v.id);
+        const pos = [v.lat, v.lon];
+
+        if (!markers.road[v.id]) {
+          const icon = L.divIcon({
+            className: 'road-marker',
+            html: `🚜`,
+            iconSize: [24, 24],
+            iconAnchor: [12, 12]
+          });
+
+          const m = L.marker(pos, { icon })
+            .bindPopup(`
+              <div class="popup-title" style="color:var(--road-color)">🚜 Maintenance Vehicle</div>
+              <div class="popup-content-text">
+                ID: ${v.vehicleId}<br/>
+                Domain: ${v.domain}<br/>
+                Tasks: <b>${v.tasks.join(', ') || 'Active'}</b><br/>
+                Source: ${v.source}<br/>
+                ${v.timestamp ? 'Time: ' + new Date(v.timestamp).toLocaleTimeString() : ''}
+              </div>
+            `);
+
+          m.on('click', () => selectVehicle(v.id));
+          markers.road[v.id] = m;
+          layerGroups.road.addLayer(m);
+        } else {
+          markers.road[v.id].setLatLng(pos);
+        }
+      });
+
+      Object.keys(markers.road).forEach(id => {
+        if (!activeIds.has(id)) {
+          layerGroups.road.removeLayer(markers.road[id]);
+          delete markers.road[id];
+        }
+      });
+    }
+
+    // --- D. MARINE AIS DATA ---
+    async function fetchMarineMetadata() {
+      try {
+        const res = await fetch("https://meri.digitraffic.fi/api/ais/v1/vessels");
+        if (!res.ok) return;
+        const vessels = await res.json();
+        const meta = {};
+        vessels.forEach(v => {
+          const mmsi = String(v.mmsi);
+          if (!mmsi) return;
+          const code = v.shipType || 0;
+          let cat = "Other";
+          if ((code >= 70 && code <= 89)) cat = "Cargo";
+          else if ((code >= 60 && code <= 69) || code === 40 || code === 50) cat = "Commercial";
+          else if (code === 36 || code === 37) cat = "Private";
+
+          meta[mmsi] = {
+            name: (v.name || "Unknown Vessel").trim(),
+            shipType: v.shipTypeEn || `Type ${code}`,
+            category: cat,
+            callSign: v.callSign || "N/A",
+            destination: v.destination || "Unknown"
+          };
+        });
+        appState.marineMetadata = meta;
+      } catch (err) {
+        console.warn("Marine metadata notice:", err);
+      }
+    }
+
+    async function fetchMarineLocations() {
+      showLoader();
+      try {
+        const res = await fetch("https://meri.digitraffic.fi/api/ais/v1/locations");
+        if (!res.ok) throw new Error("Marine API error: " + res.status);
+        const json = await res.json();
+        const features = json.features || [];
+
+        const enriched = features.map(feat => {
+          const mmsi = String(feat.properties?.mmsi);
+          const meta = appState.marineMetadata[mmsi] || {};
+          const sog = feat.properties?.sog || 0; // knots
+          const speedKmh = Math.round(sog * 1.852);
+
+          return {
+            id: 'marine-' + mmsi,
+            type: 'marine',
+            mmsi: mmsi,
+            name: meta.name || "Unknown Vessel",
+            shipType: meta.shipType || "Vessel",
+            category: meta.category || "Other",
+            speed: speedKmh,
+            heading: feat.properties?.heading ?? 'N/A',
+            callSign: meta.callSign || "N/A",
+            destination: meta.destination || "N/A",
+            timestamp: feat.properties?.timestampExternal || "",
+            lat: feat.geometry?.coordinates?.[1],
+            lon: feat.geometry?.coordinates?.[0]
+          };
+        }).filter(v => v.lat && v.lon);
+
+        appState.marineVessels = enriched;
+        updateMarineMarkers(enriched);
+        recordHistory('marine', enriched.length);
+        if (currentMode === 'marine' || currentMode === 'all') {
+          renderUI();
+        }
+      } catch (err) {
+        console.error("Marine fetch error:", err);
+      } finally {
+        hideLoader();
+      }
+    }
+
+    function updateMarineMarkers(vessels) {
+      const activeIds = new Set();
+
+      vessels.forEach(v => {
+        activeIds.add(v.id);
+        const pos = [v.lat, v.lon];
+        const isSelected = selectedVehicleId === v.id;
+
+        if (!markers.marine[v.id]) {
+          const m = L.circleMarker(pos, {
+            radius: isSelected ? 6 : 3,
+            fillColor: isSelected ? "#00f2ff" : (v.speed > 1 ? "#3fb950" : "#8b949e"),
+            color: isSelected ? "#ffffff" : "none",
+            weight: 2,
+            opacity: 1,
+            fillOpacity: isSelected ? 1 : 0.75
+          }).bindPopup(`
+            <div class="popup-title" style="color:var(--marine-color)">🚢 ${v.name}</div>
+            <div class="popup-content-text">
+              Type: <b>${v.shipType}</b> (${v.category})<br/>
+              Speed: <b>${v.speed} km/h</b><br/>
+              Heading: ${v.heading !== 'N/A' ? v.heading + '°' : 'N/A'}<br/>
+              Dest: <b>${v.destination}</b><br/>
+              CallSign: ${v.callSign}<br/>
+              ${v.timestamp ? 'Updated: ' + new Date(v.timestamp).toLocaleTimeString() : ''}
+            </div>
+          `);
+
+          m.on('click', () => selectVehicle(v.id));
+          markers.marine[v.id] = m;
+          layerGroups.marine.addLayer(m);
+        } else {
+          markers.marine[v.id].setLatLng(pos);
+          markers.marine[v.id].setStyle({
+            radius: isSelected ? 6 : 3,
+            fillColor: isSelected ? "#00f2ff" : (v.speed > 1 ? "#3fb950" : "#8b949e"),
+            color: isSelected ? "#ffffff" : "none"
+          });
+        }
+      });
+
+      Object.keys(markers.marine).forEach(id => {
+        if (!activeIds.has(id)) {
+          layerGroups.marine.removeLayer(markers.marine[id]);
+          delete markers.marine[id];
+        }
+      });
+    }
+
+    // --- E. FLIGHT DATA (Local flights.json / OpenSky API) ---
+    async function fetchFlightData() {
+      showLoader();
+      try {
+        let loaded = false;
+
+        // 1. Try local flights.json (ideal for GitHub Pages and local servers, zero CORS issues)
+        try {
+          const res = await fetch(`./flights.json?_t=${Date.now()}`);
+          if (res.ok) {
+            const data = await res.json();
+            const states = data.states || [];
+            if (states.length > 0) {
+              const enriched = states.map(s => ({
+                id: 'flight-' + s[0],
+                type: 'flight',
+                icao24: s[0],
+                callsign: (s[1] || 'Unknown').trim(),
+                country: s[2] || 'Unknown',
+                lon: s[5],
+                lat: s[6],
+                alt: Math.round(s[7] || 0),
+                onGround: Boolean(s[8]),
+                speed: Math.round((s[9] || 0) * 3.6),
+                heading: Math.round(s[10] || 0)
+              })).filter(f => f.lat && f.lon);
+
+              appState.flightPlanes = enriched;
+              loaded = true;
+            }
+          }
+        } catch (e) {
+          // Local fetch can be blocked under file:/// protocol in Chrome/Edge
+        }
+
+        // 2. Direct fetch fallback (if deployed behind proxy or CORS extension)
+        if (!loaded) {
+          try {
+            const targetUrl = `https://opensky-network.org/api/states/all?lamin=59.0&lomin=19.0&lamax=70.5&lomax=32.0`;
+            const res = await fetch(targetUrl);
+            if (res.ok) {
+              const data = await res.json();
+              const states = data.states || [];
+              if (states.length > 0) {
+                appState.flightPlanes = states.map(s => ({
+                  id: 'flight-' + s[0],
+                  type: 'flight',
+                  icao24: s[0],
+                  callsign: (s[1] || 'Unknown').trim(),
+                  country: s[2] || 'Unknown',
+                  lon: s[5],
+                  lat: s[6],
+                  alt: Math.round(s[7] || 0),
+                  onGround: Boolean(s[8]),
+                  speed: Math.round((s[9] || 0) * 3.6),
+                  heading: Math.round(s[10] || 0)
+                })).filter(f => f.lat && f.lon);
+                loaded = true;
+              }
+            }
+          } catch (err) {
+            // CORS restricted on browser
+          }
+        }
+
+        updateFlightMarkers(appState.flightPlanes);
+        recordHistory('flight', appState.flightPlanes.length);
+        if (currentMode === 'flight' || currentMode === 'all') {
+          renderUI();
+        }
+      } catch (err) {
+        console.warn("Flight fetch notice:", err);
+      } finally {
+        hideLoader();
+      }
+    }
+
+    function updateFlightMarkers(flights) {
+      const activeIds = new Set();
+
+      flights.forEach(f => {
+        activeIds.add(f.id);
+        const pos = [f.lat, f.lon];
+
+        const svgPlane = `
+          <div class="flight-marker-icon" style="transform: rotate(${f.heading}deg);">
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="${f.onGround ? '#8b949e' : '#ffae00'}">
+              <path d="M21 16v-2l-8-5V3.5c0-.83-.67-1.5-1.5-1.5S10 2.67 10 3.5V9l-8 5v2l8-2.5V19l-2 1.5V22l3.5-1 3.5 1v-1.5L13 19v-5.5l8 2.5z"/>
+            </svg>
+          </div>
+        `;
+
+        if (!markers.flight[f.id]) {
+          const icon = L.divIcon({
+            className: '',
+            html: svgPlane,
+            iconSize: [24, 24],
+            iconAnchor: [12, 12]
+          });
+
+          const m = L.marker(pos, { icon })
+            .bindPopup(`
+              <div class="popup-title" style="color:var(--flight-color)">✈️ Flight ${f.callsign}</div>
+              <div class="popup-content-text">
+                ICAO: <b>${f.icao24.toUpperCase()}</b><br/>
+                Country: ${f.country}<br/>
+                Altitude: <b>${f.alt} m</b> (${f.onGround ? 'On Ground' : 'Airborne'})<br/>
+                Speed: <b>${f.speed} km/h</b><br/>
+                Heading: ${f.heading}°
+              </div>
+            `);
+
+          m.on('click', () => selectVehicle(f.id));
+          markers.flight[f.id] = m;
+          layerGroups.flight.addLayer(m);
+        } else {
+          markers.flight[f.id].setLatLng(pos);
+          const icon = L.divIcon({
+            className: '',
+            html: svgPlane,
+            iconSize: [24, 24],
+            iconAnchor: [12, 12]
+          });
+          markers.flight[f.id].setIcon(icon);
+        }
+      });
+
+      Object.keys(markers.flight).forEach(id => {
+        if (!activeIds.has(id)) {
+          layerGroups.flight.removeLayer(markers.flight[id]);
+          delete markers.flight[id];
+        }
+      });
+    }
+
+    /* ==========================================================================
+       5. STATE MANAGEMENT, HISTORY & UI RENDERING
+       ========================================================================== */
+    function recordHistory(mode, count) {
+      const now = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+      const hist = historyData[mode];
+      hist.times.push(now);
+      hist.counts.push(count);
+      if (hist.times.length > CONFIG.historyMaxPoints) {
+        hist.times.shift();
+        hist.counts.shift();
+      }
+
+      // Record total for all
+      if (mode !== 'all') {
+        const totalAll = appState.railTrains.length + Object.keys(appState.hslVehicles).length +
+                         appState.roadVehicles.length + appState.marineVessels.length + appState.flightPlanes.length;
+        const allHist = historyData.all;
+        allHist.times.push(now);
+        allHist.counts.push(totalAll);
+        if (allHist.times.length > CONFIG.historyMaxPoints) {
+          allHist.times.shift();
+          allHist.counts.shift();
+        }
+      }
+    }
+
+    function switchMode(mode) {
+      currentMode = mode;
+      selectedVehicleId = null;
+
+      // Update button styles
+      document.querySelectorAll('.mode-btn').forEach(btn => {
+        btn.classList.toggle('active', btn.dataset.mode === mode);
+      });
+
+      // Manage Layer Visibility on map
+      if (mode === 'all') {
+        if (!map.hasLayer(layerGroups.tracks)) map.addLayer(layerGroups.tracks);
+        if (!map.hasLayer(layerGroups.rail)) map.addLayer(layerGroups.rail);
+        if (!map.hasLayer(layerGroups.hsl)) map.addLayer(layerGroups.hsl);
+        if (!map.hasLayer(layerGroups.road)) map.addLayer(layerGroups.road);
+        if (!map.hasLayer(layerGroups.marine)) map.addLayer(layerGroups.marine);
+        if (!map.hasLayer(layerGroups.flight)) map.addLayer(layerGroups.flight);
+      } else {
+        // Toggle specific layers
+        if (mode === 'rail') {
+          if (!map.hasLayer(layerGroups.tracks)) map.addLayer(layerGroups.tracks);
+          if (!map.hasLayer(layerGroups.rail)) map.addLayer(layerGroups.rail);
+          if (!map.hasLayer(layerGroups.hsl)) map.addLayer(layerGroups.hsl);
+        } else {
+          if (map.hasLayer(layerGroups.tracks)) map.removeLayer(layerGroups.tracks);
+          if (map.hasLayer(layerGroups.rail)) map.removeLayer(layerGroups.rail);
+          if (map.hasLayer(layerGroups.hsl)) map.removeLayer(layerGroups.hsl);
+        }
+
+        if (mode === 'road') {
+          if (!map.hasLayer(layerGroups.road)) map.addLayer(layerGroups.road);
+        } else {
+          if (map.hasLayer(layerGroups.road)) map.removeLayer(layerGroups.road);
+        }
+
+        if (mode === 'marine') {
+          if (!map.hasLayer(layerGroups.marine)) map.addLayer(layerGroups.marine);
+        } else {
+          if (map.hasLayer(layerGroups.marine)) map.removeLayer(layerGroups.marine);
+        }
+
+        if (mode === 'flight') {
+          if (!map.hasLayer(layerGroups.flight)) map.addLayer(layerGroups.flight);
+        } else {
+          if (map.hasLayer(layerGroups.flight)) map.removeLayer(layerGroups.flight);
+        }
+      }
+
+      // Update accent color css var
+      const colors = {
+        rail: 'var(--rail-color)',
+        road: 'var(--road-color)',
+        marine: 'var(--marine-color)',
+        flight: 'var(--flight-color)',
+        all: '#00f2ff'
+      };
+      document.documentElement.style.setProperty('--accent', colors[mode] || 'var(--rail-color)');
+
+      setupFilters();
+      renderUI();
+    }
+
+    function switchTab(tab) {
+      currentTab = tab;
+      document.querySelectorAll('.tab').forEach((t, i) => {
+        t.classList.toggle('active', (tab === 'list' && i === 0) || (tab === 'stats' && i === 1));
+      });
+      document.getElementById('list-panel').style.display = tab === 'list' ? 'flex' : 'none';
+      document.getElementById('stats-panel').classList.toggle('active', tab === 'stats');
+
+      if (tab === 'stats') {
+        updateChart();
+      }
+    }
+
+    function setupFilters() {
+      const container = document.getElementById('filter-chips-container');
+      container.innerHTML = '';
+
+      if (currentMode === 'marine') {
+        ['Cargo', 'Commercial', 'Private', 'Other'].forEach(cat => {
+          const chip = document.createElement('div');
+          chip.className = `filter-chip ${activeFilters.marine.has(cat) ? 'active' : ''}`;
+          chip.textContent = cat;
+          chip.onclick = () => {
+            if (activeFilters.marine.has(cat)) activeFilters.marine.delete(cat);
+            else activeFilters.marine.add(cat);
+            chip.classList.toggle('active');
+            renderUI();
+          };
+          container.appendChild(chip);
+        });
+      } else if (currentMode === 'rail') {
+        const items = [
+          { id: 'train', label: 'Long Distance' },
+          { id: 'metro', label: 'Commuter / Metro' },
+          { id: 'tram', label: 'Tram' },
+          { id: 'cargo', label: 'Cargo' }
+        ];
+        items.forEach(item => {
+          const chip = document.createElement('div');
+          chip.className = `filter-chip ${activeFilters.rail.has(item.id) ? 'active' : ''}`;
+          chip.textContent = item.label;
+          chip.onclick = () => {
+            if (activeFilters.rail.has(item.id)) activeFilters.rail.delete(item.id);
+            else activeFilters.rail.add(item.id);
+            chip.classList.toggle('active');
+            renderUI();
+          };
+          container.appendChild(chip);
+        });
+      } else if (currentMode === 'flight') {
+        [
+          { id: 'airborne', label: 'Airborne' },
+          { id: 'ground', label: 'On Ground' }
+        ].forEach(item => {
+          const chip = document.createElement('div');
+          chip.className = `filter-chip ${activeFilters.flight.has(item.id) ? 'active' : ''}`;
+          chip.textContent = item.label;
+          chip.onclick = () => {
+            if (activeFilters.flight.has(item.id)) activeFilters.flight.delete(item.id);
+            else activeFilters.flight.add(item.id);
+            chip.classList.toggle('active');
+            renderUI();
+          };
+          container.appendChild(chip);
+        });
+      }
+    }
+
+    function getVisibleItems() {
+      const query = searchQuery.toLowerCase();
+      let list = [];
+
+      if (currentMode === 'rail' || currentMode === 'all') {
+        const trains = appState.railTrains.filter(t => {
+          if (currentMode === 'rail' && !activeFilters.rail.has(t.category)) return false;
+          if (query && !(`${t.trainNumber} ${t.origin} ${t.destination} ${t.trainType}`).toLowerCase().includes(query)) return false;
+          return true;
+        });
+
+        const hslList = Object.values(appState.hslVehicles).filter(h => {
+          if (currentMode === 'rail' && !activeFilters.rail.has(h.mode)) return false;
+          if (query && !(`${h.route} ${h.veh}`).toLowerCase().includes(query)) return false;
+          return true;
+        });
+
+        list = list.concat(trains, hslList);
+      }
+
+      if (currentMode === 'road' || currentMode === 'all') {
+        const road = appState.roadVehicles.filter(v => {
+          if (query && !(`${v.vehicleId} ${v.domain} ${v.tasks.join(' ')}`).toLowerCase().includes(query)) return false;
+          return true;
+        });
+        list = list.concat(road);
+      }
+
+      if (currentMode === 'marine' || currentMode === 'all') {
+        const marine = appState.marineVessels.filter(v => {
+          if (currentMode === 'marine' && !activeFilters.marine.has(v.category)) return false;
+          if (query && !(`${v.name} ${v.mmsi} ${v.shipType} ${v.destination}`).toLowerCase().includes(query)) return false;
+          return true;
+        });
+        list = list.concat(marine);
+      }
+
+      if (currentMode === 'flight' || currentMode === 'all') {
+        const flights = appState.flightPlanes.filter(f => {
+          if (currentMode === 'flight') {
+            if (f.onGround && !activeFilters.flight.has('ground')) return false;
+            if (!f.onGround && !activeFilters.flight.has('airborne')) return false;
+          }
+          if (query && !(`${f.callsign} ${f.icao24} ${f.country}`).toLowerCase().includes(query)) return false;
+          return true;
+        });
+        list = list.concat(flights);
+      }
+
+      return list;
+    }
+
+    function renderUI() {
+      // 1. Titles & Counts
+      const titles = {
+        rail: '🚆 Rail Tracker',
+        road: '🚜 Road Maintenance',
+        marine: '🚢 Marine AIS Tracker',
+        flight: '✈️ Flight Tracker',
+        all: '🌐 All Traffic Combined'
+      };
+      document.getElementById('sidebar-title').textContent = titles[currentMode] || 'Traffic Tracker';
+
+      const items = getVisibleItems();
+      document.getElementById('sidebar-count').textContent = `${items.length} active`;
+
+      // 2. Render Live List
+      renderLiveList(items);
+
+      // 3. Render Statistics
+      renderStatistics();
+    }
+
+    function renderLiveList(items) {
+      const panel = document.getElementById('list-panel');
+      panel.innerHTML = '';
+
+      const MAX_ITEMS = 80;
+      const displayItems = items.slice(0, MAX_ITEMS);
+
+      if (displayItems.length === 0) {
+        if (currentMode === 'flight' && appState.flightPlanes.length === 0) {
+          panel.innerHTML = `
+            <div style="text-align:center;color:var(--text-muted);padding:1.5rem 1rem;font-size:0.82rem;line-height:1.5;">
+              <div style="font-size:1.8rem;margin-bottom:8px;">✈️</div>
+              <div style="color:var(--text);font-weight:600;margin-bottom:6px;">OpenSky Flight Data Notice</div>
+              <div>OpenSky Network's API restricts browser CORS requests on static hosting (like GitHub Pages).</div>
+              <div style="margin-top:10px;font-size:0.75rem;color:var(--success);background:rgba(63,185,80,0.1);padding:8px;border-radius:8px;border:1px solid rgba(63,185,80,0.25);">
+                🚆 <b>Rail</b>, 🚜 <b>Road</b>, and 🚢 <b>Marine</b> live tracking operate with 100% native browser support!
+              </div>
+            </div>
+          `;
+        } else {
+          panel.innerHTML = `<div style="text-align:center;color:var(--text-muted);padding:2rem 1rem;font-size:0.85rem;">No active traffic matching current filter or search.</div>`;
+        }
+        return;
+      }
+
+      displayItems.forEach(item => {
+        const el = document.createElement('div');
+        el.className = `vehicle-item ${selectedVehicleId === item.id ? 'active' : ''}`;
+
+        if (item.type === 'rail') {
+          el.innerHTML = `
+            <div class="vehicle-top">
+              <div class="vehicle-title">🚆 Train #${item.trainNumber}</div>
+              <div class="vehicle-speed">${item.speed} km/h</div>
+            </div>
+            <div class="vehicle-sub">${item.origin} → ${item.destination}</div>
+            <div class="vehicle-meta">
+              <span class="badge-pill">${item.trainType}</span>
+              ${item.commuterLineID ? `<span class="badge-pill">Line ${item.commuterLineID}</span>` : ''}
+              <span class="badge-pill">${item.operator}</span>
+            </div>
+          `;
+        } else if (item.type === 'hsl') {
+          const icon = item.mode === 'metro' ? '🚇' : '🚋';
+          el.innerHTML = `
+            <div class="vehicle-top">
+              <div class="vehicle-title" style="color:${item.mode === 'metro' ? '#af52de' : '#3fb950'}">${icon} ${item.route}</div>
+              <div class="vehicle-speed">${item.speed} km/h</div>
+            </div>
+            <div class="vehicle-sub">Helsinki Region • Vehicle #${item.veh}</div>
+            <div class="vehicle-meta">
+              <span class="badge-pill">Delay: ${item.delay}</span>
+            </div>
+          `;
+        } else if (item.type === 'road') {
+          el.innerHTML = `
+            <div class="vehicle-top">
+              <div class="vehicle-title" style="color:var(--road-color)">🚜 ${item.primaryTask}</div>
+              <span class="badge-pill">${item.domain}</span>
+            </div>
+            <div class="vehicle-sub">Vehicle: ${item.vehicleId}</div>
+            <div class="vehicle-meta">
+              ${item.tasks.map(t => `<span class="badge-pill">${t}</span>`).join('')}
+            </div>
+          `;
+        } else if (item.type === 'marine') {
+          el.innerHTML = `
+            <div class="vehicle-top">
+              <div class="vehicle-title" style="color:var(--marine-color)">🚢 ${item.name}</div>
+              <div class="vehicle-speed">${item.speed} km/h</div>
+            </div>
+            <div class="vehicle-sub">${item.shipType} • → ${item.destination}</div>
+            <div class="vehicle-meta">
+              <span class="badge-pill">${item.category}</span>
+              <span class="badge-pill">MMSI: ${item.mmsi}</span>
+            </div>
+          `;
+        } else if (item.type === 'flight') {
+          el.innerHTML = `
+            <div class="vehicle-top">
+              <div class="vehicle-title" style="color:var(--flight-color)">✈️ ${item.callsign}</div>
+              <div class="vehicle-speed">${item.speed} km/h</div>
+            </div>
+            <div class="vehicle-sub">${item.country} • Alt: ${item.alt} m</div>
+            <div class="vehicle-meta">
+              <span class="badge-pill">${item.onGround ? 'On Ground' : 'Airborne'}</span>
+              <span class="badge-pill">${item.heading}°</span>
+              <span class="badge-pill">${item.icao24.toUpperCase()}</span>
+            </div>
+          `;
+        }
+
+        el.onclick = () => selectVehicle(item.id, true);
+        panel.appendChild(el);
+      });
+
+      if (items.length > MAX_ITEMS) {
+        const more = document.createElement('div');
+        more.style.cssText = "padding: 10px; text-align: center; color: var(--text-muted); font-size: 0.75rem;";
+        more.innerText = `Showing first ${MAX_ITEMS} of ${items.length} items...`;
+        panel.appendChild(more);
+      }
+    }
+
+    function selectVehicle(id, flyTo = false) {
+      selectedVehicleId = id;
+
+      // Find marker
+      let targetMarker = null;
+      let pos = null;
+
+      for (const group of ['rail', 'hsl', 'road', 'marine', 'flight']) {
+        if (markers[group][id]) {
+          targetMarker = markers[group][id];
+          pos = targetMarker.getLatLng();
+          break;
+        }
+      }
+
+      if (targetMarker && pos) {
+        if (flyTo) {
+          map.flyTo(pos, Math.max(map.getZoom(), 11), { duration: 1.2 });
+        }
+        setTimeout(() => targetMarker.openPopup(), flyTo ? 600 : 50);
+      }
+
+      renderLiveList(getVisibleItems());
+    }
+
+    function renderStatistics() {
+      const breakdownEl = document.getElementById('stat-breakdown-content');
+
+      if (currentMode === 'rail') {
+        const total = appState.railTrains.length + Object.keys(appState.hslVehicles).length;
+        const speeds = appState.railTrains.map(t => t.speed).filter(s => s > 0);
+        const avgSpeed = speeds.length ? Math.round(speeds.reduce((a,b)=>a+b,0)/speeds.length) : 0;
+        const maxSpeed = speeds.length ? Math.max(...speeds) : 0;
+
+        document.getElementById('stat-main-title').textContent = 'Total Trains & Transit';
+        document.getElementById('stat-main-value').textContent = total;
+        document.getElementById('stat-sec1-title').textContent = 'Avg Speed';
+        document.getElementById('stat-sec1-value').innerHTML = `${avgSpeed} <span style="font-size:0.75rem;font-weight:400">km/h</span>`;
+        document.getElementById('stat-sec2-title').textContent = 'Max Speed';
+        document.getElementById('stat-sec2-value').innerHTML = `${maxSpeed} <span style="font-size:0.75rem;font-weight:400">km/h</span>`;
+
+        const cats = {};
+        appState.railTrains.forEach(t => { cats[t.category] = (cats[t.category] || 0) + 1; });
+        const hslMetro = Object.values(appState.hslVehicles).filter(h => h.mode === 'metro').length;
+        const hslTram = Object.values(appState.hslVehicles).filter(h => h.mode === 'tram').length;
+
+        breakdownEl.innerHTML = `
+          <div><b>Long Distance Trains:</b> ${cats['train'] || 0}</div>
+          <div><b>Cargo Trains:</b> ${cats['cargo'] || 0}</div>
+          <div><b>Commuter Trains:</b> ${cats['metro'] || 0}</div>
+          <div><b>HSL Metro:</b> ${hslMetro}</div>
+          <div><b>HSL Tram:</b> ${hslTram}</div>
+        `;
+      } else if (currentMode === 'road') {
+        const total = appState.roadVehicles.length;
+        document.getElementById('stat-main-title').textContent = 'Active Maintenance Vehicles';
+        document.getElementById('stat-main-value').textContent = total;
+        document.getElementById('stat-sec1-title').textContent = 'Domains';
+        const domains = new Set(appState.roadVehicles.map(v => v.domain)).size;
+        document.getElementById('stat-sec1-value').textContent = domains;
+        document.getElementById('stat-sec2-title').textContent = 'Contractors';
+        const sources = new Set(appState.roadVehicles.map(v => v.source)).size;
+        document.getElementById('stat-sec2-value').textContent = sources;
+
+        const taskCounts = {};
+        appState.roadVehicles.forEach(v => {
+          v.tasks.forEach(t => { taskCounts[t] = (taskCounts[t] || 0) + 1; });
+        });
+        const topTasks = Object.entries(taskCounts).sort((a,b)=>b[1]-a[1]).slice(0, 5);
+
+        breakdownEl.innerHTML = topTasks.length
+          ? topTasks.map(([task, count]) => `<div><b>${task}:</b> ${count}</div>`).join('')
+          : '<div>No task data available</div>';
+      } else if (currentMode === 'marine') {
+        const total = appState.marineVessels.length;
+        const speeds = appState.marineVessels.map(v => v.speed).filter(s => s > 0);
+        const avgSpeed = speeds.length ? Math.round(speeds.reduce((a,b)=>a+b,0)/speeds.length) : 0;
+        const maxSpeed = speeds.length ? Math.max(...speeds) : 0;
+
+        document.getElementById('stat-main-title').textContent = 'Total AIS Vessels';
+        document.getElementById('stat-main-value').textContent = total;
+        document.getElementById('stat-sec1-title').textContent = 'Avg Speed';
+        document.getElementById('stat-sec1-value').innerHTML = `${avgSpeed} <span style="font-size:0.75rem;font-weight:400">km/h</span>`;
+        document.getElementById('stat-sec2-title').textContent = 'Max Speed';
+        document.getElementById('stat-sec2-value').innerHTML = `${maxSpeed} <span style="font-size:0.75rem;font-weight:400">km/h</span>`;
+
+        const cats = {};
+        appState.marineVessels.forEach(v => { cats[v.category] = (cats[v.category] || 0) + 1; });
+
+        breakdownEl.innerHTML = `
+          <div><b>Cargo & Tanker:</b> ${cats['Cargo'] || 0}</div>
+          <div><b>Commercial / Passenger:</b> ${cats['Commercial'] || 0}</div>
+          <div><b>Private / Pleasure:</b> ${cats['Private'] || 0}</div>
+          <div><b>Other / Special:</b> ${cats['Other'] || 0}</div>
+        `;
+      } else if (currentMode === 'flight') {
+        const total = appState.flightPlanes.length;
+        const speeds = appState.flightPlanes.map(f => f.speed).filter(s => s > 0);
+        const avgSpeed = speeds.length ? Math.round(speeds.reduce((a,b)=>a+b,0)/speeds.length) : 0;
+        const alts = appState.flightPlanes.map(f => f.alt).filter(a => a > 0);
+        const avgAlt = alts.length ? Math.round(alts.reduce((a,b)=>a+b,0)/alts.length) : 0;
+
+        const airborne = appState.flightPlanes.filter(f => !f.onGround).length;
+        const onGround = total - airborne;
+
+        document.getElementById('stat-main-title').textContent = 'Total Aircraft over Finland';
+        document.getElementById('stat-main-value').textContent = total;
+        document.getElementById('stat-sec1-title').textContent = 'Avg Altitude';
+        document.getElementById('stat-sec1-value').innerHTML = `${avgAlt} <span style="font-size:0.75rem;font-weight:400">m</span>`;
+        document.getElementById('stat-sec2-title').textContent = 'Avg Speed';
+        document.getElementById('stat-sec2-value').innerHTML = `${avgSpeed} <span style="font-size:0.75rem;font-weight:400">km/h</span>`;
+
+        breakdownEl.innerHTML = `
+          <div><b>Airborne:</b> ${airborne}</div>
+          <div><b>On Ground:</b> ${onGround}</div>
+        `;
+      } else if (currentMode === 'all') {
+        const totalRail = appState.railTrains.length + Object.keys(appState.hslVehicles).length;
+        const totalRoad = appState.roadVehicles.length;
+        const totalMarine = appState.marineVessels.length;
+        const totalFlight = appState.flightPlanes.length;
+        const grandTotal = totalRail + totalRoad + totalMarine + totalFlight;
+
+        document.getElementById('stat-main-title').textContent = 'Grand Total Active Traffic';
+        document.getElementById('stat-main-value').textContent = grandTotal;
+        document.getElementById('stat-sec1-title').textContent = 'Land Vehicles';
+        document.getElementById('stat-sec1-value').textContent = totalRail + totalRoad;
+        document.getElementById('stat-sec2-title').textContent = 'Air & Sea';
+        document.getElementById('stat-sec2-value').textContent = totalMarine + totalFlight;
+
+        breakdownEl.innerHTML = `
+          <div><b style="color:var(--rail-color)">🚆 Rail & Transit:</b> ${totalRail}</div>
+          <div><b style="color:var(--road-color)">🚜 Road Maintenance:</b> ${totalRoad}</div>
+          <div><b style="color:var(--marine-color)">🚢 Maritime AIS:</b> ${totalMarine}</div>
+          <div><b style="color:var(--flight-color)">✈️ Air Traffic:</b> ${totalFlight}</div>
+        `;
+      }
+
+      if (currentTab === 'stats') {
+        updateChart();
+      }
+    }
+
+    function updateChart() {
+      const hist = historyData[currentMode] || { times: [], counts: [] };
+      const colors = {
+        rail: { border: '#2f81f7', bg: 'rgba(47, 129, 247, 0.12)' },
+        road: { border: '#ffa500', bg: 'rgba(255, 165, 0, 0.12)' },
+        marine: { border: '#00f2ff', bg: 'rgba(0, 242, 255, 0.12)' },
+        flight: { border: '#ffae00', bg: 'rgba(255, 174, 0, 0.12)' },
+        all: { border: '#00f2ff', bg: 'rgba(0, 242, 255, 0.12)' }
+      };
+
+      const c = colors[currentMode] || colors.rail;
+      historyChart.data.labels = hist.times;
+      historyChart.data.datasets[0].data = hist.counts;
+      historyChart.data.datasets[0].borderColor = c.border;
+      historyChart.data.datasets[0].backgroundColor = c.bg;
+      historyChart.data.datasets[0].label = `${currentMode.toUpperCase()} Active Count`;
+      historyChart.update();
+    }
+
+    function toggleSidebar() {
+      document.getElementById('sidebar').classList.toggle('open');
+    }
+
+    function triggerRefresh() {
+      fetchRailLocations();
+      fetchRoadData();
+      fetchMarineLocations();
+      fetchFlightData();
+    }
+
+    // Search input listener
+    document.getElementById('search-input').addEventListener('input', (e) => {
+      searchQuery = e.target.value.trim();
+      renderUI();
+    });
+
+    /* ==========================================================================
+       6. BOOTSTRAP APPLICATION
+       ========================================================================== */
+    async function init() {
+      console.log("Starting Traffic Tracker Finland Monolith App...");
+      setupFilters();
+
+      // Render initial flights snapshot immediately (instant display with 0 network wait)
+      updateFlightMarkers(appState.flightPlanes);
+      recordHistory('flight', appState.flightPlanes.length);
+
+      // 1. Initial background loads
+      loadRailInfrastructure();
+      await Promise.allSettled([
+        fetchRailMetadata(),
+        fetchMarineMetadata()
+      ]);
+
+      // 2. Fetch active vehicle positions
+      await Promise.allSettled([
+        fetchRailLocations(),
+        fetchRoadData(),
+        fetchMarineLocations(),
+        fetchFlightData()
+      ]);
+
+      // 3. Connect real-time HSL MQTT stream
+      initHslMqtt();
+
+      // 4. Register Polling Timers
+      setInterval(fetchRailLocations, CONFIG.intervals.rail);
+      setInterval(fetchRoadData, CONFIG.intervals.road);
+      setInterval(fetchMarineLocations, CONFIG.intervals.marine);
+      setInterval(fetchFlightData, CONFIG.intervals.flight);
+
+      // Metadata refresh (every 10 minutes)
+      setInterval(fetchRailMetadata, 600000);
+
+      renderUI();
+    }
+
+    window.addEventListener('DOMContentLoaded', init);
+  </script>
+</body>
+</html>
