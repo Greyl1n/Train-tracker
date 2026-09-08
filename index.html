@@ -492,24 +492,25 @@
     .marker-badge.trunk { background: #ff6319; }
     .marker-badge.foli { background: #fdb913; color: #0d1117; border-color: #0d1117; }
 
-    /* Dimming & Highlighting for focused routes */
-    .marker-dimmed {
+    /* GPU-Accelerated Dimming & Highlighting for focused routes */
+    #map.dimmed-view .leaflet-marker-pane > *:not(.marker-highlighted),
+    #map.dimmed-view .leaflet-overlay-pane path:not(.route-line) {
       opacity: 0.18 !important;
       filter: grayscale(85%) contrast(80%) !important;
-      transition: opacity 0.3s ease, filter 0.3s ease !important;
+      transition: opacity 0.25s ease, filter 0.25s ease !important;
     }
     .marker-highlighted {
       opacity: 1.0 !important;
-      filter: drop-shadow(0 0 8px rgba(0, 122, 201, 0.95)) !important;
+      filter: drop-shadow(0 0 10px rgba(0, 122, 201, 0.95)) !important;
       transform: scale(1.18) !important;
       z-index: 1000 !important;
-      transition: all 0.3s ease !important;
+      transition: transform 0.25s ease !important;
     }
     .marker-highlighted .marker-badge.trunk {
-      filter: drop-shadow(0 0 10px rgba(255, 99, 25, 0.95)) !important;
+      filter: drop-shadow(0 0 12px rgba(255, 99, 25, 0.95)) !important;
     }
     .marker-highlighted .marker-badge.foli {
-      filter: drop-shadow(0 0 10px rgba(253, 185, 19, 0.95)) !important;
+      filter: drop-shadow(0 0 12px rgba(253, 185, 19, 0.95)) !important;
     }
 
     .track-label {
@@ -649,7 +650,9 @@
         </div>
         <div class="stat-box">
           <div class="stat-title" id="stat-chart-title">Activity Over Time</div>
-          <canvas id="historyChart" width="280" height="150"></canvas>
+          <div style="position: relative; height: 165px; width: 100%; margin-top: 6px;">
+            <canvas id="historyChart"></canvas>
+          </div>
         </div>
       </div>
     </div>
@@ -675,6 +678,26 @@
         cleanupHSL: 30000
       },
       trunkLines: ['20', '30', '40', '500', '510', '520', '530', '550', '560', '570', '600'],
+      cityNames: {
+        hsl: 'Helsinki (HSL)',
+        foli: 'Turku (Föli)',
+        tampere: 'Tampere (Nysse)',
+        oulu: 'Oulu (OSL)',
+        linkki: 'Jyväskylä (Linkki)',
+        lahti: 'Lahti (LSL)',
+        kuopio: 'Kuopio (Vilkku)',
+        joensuu: 'Joensuu (JOJO)',
+        vaasa: 'Vaasa (Lifti)',
+        lappeenranta: 'Lappeenranta (Jouko)',
+        rovaniemi: 'Rovaniemi (Linkkari)',
+        hameenlinna: 'Hämeenlinna',
+        kotka: 'Kotka',
+        kouvola: 'Kouvola',
+        pori: 'Pori',
+        mikkeli: 'Mikkeli',
+        kajaani: 'Kajaani',
+        salo: 'Salo'
+      },
       taskLabels: {
         "LEVELLING_GRAVEL_ROAD_SURFACE": "Gravel Levelling",
         "PAVING": "Paving",
@@ -778,7 +801,16 @@
     };
 
     // Active marker dictionary: [id] -> L.Marker / L.CircleMarker
-    const routeShapesCache = {};
+    const routeShapesCache = new Map();
+    const MAX_SHAPES_CACHE = 60;
+    function getRouteShape(key) { return routeShapesCache.get(key); }
+    function setRouteShape(key, data) {
+      if (routeShapesCache.size >= MAX_SHAPES_CACHE) {
+        const first = routeShapesCache.keys().next().value;
+        routeShapesCache.delete(first);
+      }
+      routeShapesCache.set(key, data);
+    }
     const markers = {
       rail: {},
       hsl: {},
@@ -817,26 +849,41 @@
           label: 'Count',
           data: [],
           borderColor: '#2f81f7',
-          backgroundColor: 'rgba(47, 129, 247, 0.12)',
+          backgroundColor: 'rgba(47, 129, 247, 0.15)',
           fill: true,
           tension: 0.35,
           borderWidth: 2,
-          pointRadius: 2
+          pointRadius: 3,
+          pointHoverRadius: 5
         }]
       },
       options: {
         responsive: true,
         maintainAspectRatio: false,
-        plugins: { legend: { display: false } },
+        animation: { duration: 300 },
+        interaction: { mode: 'nearest', axis: 'x', intersect: false },
+        plugins: {
+          legend: { display: false },
+          tooltip: {
+            mode: 'index',
+            intersect: false,
+            backgroundColor: '#161b22',
+            titleColor: '#f0f6fc',
+            bodyColor: '#58a6ff',
+            borderColor: '#30363d',
+            borderWidth: 1,
+            padding: 8
+          }
+        },
         scales: {
           x: {
-            ticks: { color: '#8b949e', maxTicksLimit: 5, font: { size: 10 } },
+            ticks: { color: '#8b949e', maxTicksLimit: 6, maxRotation: 0, font: { size: 10 } },
             grid: { color: 'rgba(255,255,255,0.05)' }
           },
           y: {
-            ticks: { color: '#8b949e', font: { size: 10 } },
+            ticks: { color: '#8b949e', precision: 0, font: { size: 10 } },
             grid: { color: 'rgba(255,255,255,0.05)' },
-            beginAtZero: true
+            grace: '5%'
           }
         }
       }
@@ -998,18 +1045,21 @@
           });
 
           const m = L.marker(pos, { icon })
-            .bindPopup(`
-              <div class="popup-title">🚆 Train #${t.trainNumber}</div>
-              <div class="popup-content-text">
-                <b>${route}</b><br/>
-                Type: ${t.trainType}<br/>
-                Speed: <b>${t.speed} km/h</b><br/>
-                Operator: ${t.operator}<br/>
-                ${t.commuterLineID ? 'Line: ' + t.commuterLineID + '<br/>' : ''}
-                Departure: ${t.departureDate || 'N/A'}<br/>
-                ${t.timestamp ? 'Updated: ' + new Date(t.timestamp).toLocaleTimeString() : ''}
-              </div>
-            `);
+            .bindPopup(() => {
+              const cur = appState.railTrains.find(x => x.id === t.id) || t;
+              return `
+                <div class="popup-title">🚆 Train #${cur.trainNumber}</div>
+                <div class="popup-content-text">
+                  <b>${cur.origin} → ${cur.destination}</b><br/>
+                  Type: ${cur.trainType}<br/>
+                  Speed: <b>${cur.speed} km/h</b><br/>
+                  Operator: ${cur.operator}<br/>
+                  ${cur.commuterLineID ? 'Line: ' + cur.commuterLineID + '<br/>' : ''}
+                  Departure: ${cur.departureDate || 'N/A'}<br/>
+                  ${cur.timestamp ? 'Updated: ' + new Date(cur.timestamp).toLocaleTimeString() : ''}
+                </div>
+              `;
+            });
 
           m.on('click', () => selectVehicle(t.id));
           markers.rail[t.id] = m;
@@ -1095,7 +1145,7 @@
               };
 
               appState.busVehicles[id] = item;
-              updateBusMarker(item);
+              queueBusMarkerUpdate(item);
               return;
             }
 
@@ -1203,47 +1253,69 @@
     }
 
     // --- B2. BUS MARKERS & TURKU (FÖLI) SIRI API ---
+    let pendingBusUpdates = {};
+    let busRafScheduled = false;
+
+    function queueBusMarkerUpdate(item) {
+      if (currentMode !== 'bus' && currentMode !== 'all') return;
+      pendingBusUpdates[item.id] = item;
+      if (!busRafScheduled) {
+        busRafScheduled = true;
+        requestAnimationFrame(flushBusMarkerUpdates);
+      }
+    }
+
+    function flushBusMarkerUpdates() {
+      busRafScheduled = false;
+      const updates = pendingBusUpdates;
+      pendingBusUpdates = {};
+      for (const id in updates) {
+        updateBusMarker(updates[id]);
+      }
+    }
+
+    function syncBusMarkers() {
+      if (currentMode !== 'bus' && currentMode !== 'all') return;
+      const buses = Object.values(appState.busVehicles);
+      for (let i = 0; i < buses.length; i++) {
+        updateBusMarker(buses[i]);
+      }
+    }
+
     function updateBusMarker(b) {
+      if (currentMode !== 'bus' && currentMode !== 'all') return;
       const pos = [b.lat, b.lon];
-      const isSelected = selectedVehicleId === b.id;
       const badgeClass = b.isTrunk ? 'trunk' : b.region === 'foli' ? 'foli' : 'bus';
 
       if (!markers.bus[b.id]) {
+        const badgeStyle = b.color ? `background:${b.color};` : '';
         const icon = L.divIcon({
           className: 'custom-div-icon',
-          html: `<div class="marker-badge ${badgeClass}" style="font-size:0.58rem; width:26px; height:26px;">${b.line}</div>`,
+          html: `<div class="marker-badge ${badgeClass}" style="font-size:0.58rem; width:26px; height:26px; ${badgeStyle}">${b.line}</div>`,
           iconSize: [26, 26],
           iconAnchor: [13, 13]
         });
 
+        // Lazy popup: only evaluated on click
         const m = L.marker(pos, { icon })
-          .bindPopup(`
-            <div class="popup-title" style="color:${b.isTrunk ? '#ff6319' : b.region === 'foli' ? '#fdb913' : 'var(--bus-color)'}">
-              🚌 ${b.route}
-            </div>
-            <div class="popup-content-text">
-              Region: <b>${b.region === 'hsl' ? 'Helsinki Metropolitan (HSL)' : 'Turku Region (Föli)'}</b><br/>
-              Vehicle: #${b.veh}<br/>
-              ${b.speed ? `Speed: <b>${b.speed} km/h</b><br/>` : ''}
-              Schedule: <b>${b.delayStr}</b> (${b.delay > 0 ? '+' : ''}${b.delay}s)<br/>
-              ${b.origin ? `From: ${b.origin}<br/>` : ''}
-              ${b.destination ? `To: ${b.destination}<br/>` : ''}
-              Operator: ${b.operator}<br/>
-              Updated: ${new Date(b.timestamp).toLocaleTimeString()}
-            </div>
-          `);
-
-        // If a bus is currently selected, check if this new bus belongs to that line or should be dimmed
-        if (selectedVehicleId && appState.busVehicles[selectedVehicleId]) {
-          const selLine = appState.busVehicles[selectedVehicleId].line;
-          if (b.line === selLine) {
-            m.setOpacity(1.0);
-            m.setZIndexOffset(1000);
-          } else {
-            m.setOpacity(0.18);
-            m.setZIndexOffset(0);
-          }
-        }
+          .bindPopup(() => {
+            const cur = appState.busVehicles[b.id] || b;
+            return `
+              <div class="popup-title" style="color:${cur.isTrunk ? '#ff6319' : cur.region === 'foli' ? '#fdb913' : 'var(--bus-color)'}">
+                🚌 ${cur.route}
+              </div>
+              <div class="popup-content-text">
+                Region: <b>${cur.cityName || (cur.region === 'hsl' ? 'Helsinki (HSL)' : cur.region === 'foli' ? 'Turku (Föli)' : cur.region)}</b><br/>
+                Vehicle: #${cur.veh}<br/>
+                ${cur.speed ? `Speed: <b>${cur.speed} km/h</b><br/>` : ''}
+                Schedule: <b>${cur.delayStr}</b> (${cur.delay > 0 ? '+' : ''}${cur.delay}s)<br/>
+                ${cur.origin ? `From: ${cur.origin}<br/>` : ''}
+                ${cur.destination ? `To: ${cur.destination}<br/>` : ''}
+                Operator: ${cur.operator}<br/>
+                Updated: ${new Date(cur.timestamp).toLocaleTimeString()}
+              </div>
+            `;
+          });
 
         m.on('click', () => selectVehicle(b.id));
         markers.bus[b.id] = m;
@@ -1292,7 +1364,7 @@
           };
 
           appState.busVehicles[id] = item;
-          updateBusMarker(item);
+          queueBusMarkerUpdate(item);
         });
 
         recordHistory('bus', Object.keys(appState.busVehicles).length);
@@ -1341,9 +1413,9 @@
         if (currentMode === 'bus' || currentMode === 'all') {
         const buses = Object.values(appState.busVehicles).filter(b => {
           if (currentMode === 'bus') {
+            if (activeFilters.bus.has('all')) return true;
             if (activeFilters.bus.has('trunk') && b.isTrunk) return true;
             if (activeFilters.bus.has(b.region)) return true;
-            if (activeFilters.bus.has('all')) return true;
             return false;
           }
           if (query && !(`${b.line} ${b.route} ${b.veh} ${b.region}`).toLowerCase().includes(query)) return false;
@@ -1378,16 +1450,19 @@
           });
 
           const m = L.marker(pos, { icon })
-            .bindPopup(`
-              <div class="popup-title" style="color:var(--road-color)">🚜 Maintenance Vehicle</div>
-              <div class="popup-content-text">
-                ID: ${v.vehicleId}<br/>
-                Domain: ${v.domain}<br/>
-                Tasks: <b>${v.tasks.join(', ') || 'Active'}</b><br/>
-                Source: ${v.source}<br/>
-                ${v.timestamp ? 'Time: ' + new Date(v.timestamp).toLocaleTimeString() : ''}
-              </div>
-            `);
+            .bindPopup(() => {
+              const cur = appState.roadVehicles.find(x => x.id === v.id) || v;
+              return `
+                <div class="popup-title" style="color:var(--road-color)">🚜 Maintenance Vehicle</div>
+                <div class="popup-content-text">
+                  ID: ${cur.vehicleId}<br/>
+                  Domain: ${cur.domain}<br/>
+                  Tasks: <b>${(cur.tasks || []).join(', ') || 'Active'}</b><br/>
+                  Source: ${cur.source}<br/>
+                  ${cur.timestamp ? 'Time: ' + new Date(cur.timestamp).toLocaleTimeString() : ''}
+                </div>
+              `;
+            });
 
           m.on('click', () => selectVehicle(v.id));
           markers.road[v.id] = m;
@@ -1495,17 +1570,20 @@
             weight: 2,
             opacity: 1,
             fillOpacity: isSelected ? 1 : 0.75
-          }).bindPopup(`
-            <div class="popup-title" style="color:var(--marine-color)">🚢 ${v.name}</div>
-            <div class="popup-content-text">
-              Type: <b>${v.shipType}</b> (${v.category})<br/>
-              Speed: <b>${v.speed} km/h</b><br/>
-              Heading: ${v.heading !== 'N/A' ? v.heading + '°' : 'N/A'}<br/>
-              Dest: <b>${v.destination}</b><br/>
-              CallSign: ${v.callSign}<br/>
-              ${v.timestamp ? 'Updated: ' + new Date(v.timestamp).toLocaleTimeString() : ''}
-            </div>
-          `);
+          }).bindPopup(() => {
+            const cur = appState.marineVessels.find(x => x.id === v.id) || v;
+            return `
+              <div class="popup-title" style="color:var(--marine-color)">🚢 ${cur.name}</div>
+              <div class="popup-content-text">
+                Type: <b>${cur.shipType}</b> (${cur.category})<br/>
+                Speed: <b>${cur.speed} km/h</b><br/>
+                Heading: ${cur.heading !== 'N/A' ? cur.heading + '°' : 'N/A'}<br/>
+                Dest: <b>${cur.destination}</b><br/>
+                CallSign: ${cur.callSign}<br/>
+                ${cur.timestamp ? 'Updated: ' + new Date(cur.timestamp).toLocaleTimeString() : ''}
+              </div>
+            `;
+          });
 
           m.on('click', () => selectVehicle(v.id));
           markers.marine[v.id] = m;
@@ -1629,16 +1707,19 @@
           });
 
           const m = L.marker(pos, { icon })
-            .bindPopup(`
-              <div class="popup-title" style="color:var(--flight-color)">✈️ Flight ${f.callsign}</div>
-              <div class="popup-content-text">
-                ICAO: <b>${f.icao24.toUpperCase()}</b><br/>
-                Country: ${f.country}<br/>
-                Altitude: <b>${f.alt} m</b> (${f.onGround ? 'On Ground' : 'Airborne'})<br/>
-                Speed: <b>${f.speed} km/h</b><br/>
-                Heading: ${f.heading}°
-              </div>
-            `);
+            .bindPopup(() => {
+              const cur = appState.flightPlanes.find(x => x.id === f.id) || f;
+              return `
+                <div class="popup-title" style="color:var(--flight-color)">✈️ Flight ${cur.callsign}</div>
+                <div class="popup-content-text">
+                  ICAO: <b>${cur.icao24.toUpperCase()}</b><br/>
+                  Country: ${cur.country}<br/>
+                  Altitude: <b>${cur.alt} m</b> (${cur.onGround ? 'On Ground' : 'Airborne'})<br/>
+                  Speed: <b>${cur.speed} km/h</b><br/>
+                  Heading: ${cur.heading}°
+                </div>
+              `;
+            });
 
           m.on('click', () => selectVehicle(f.id));
           markers.flight[f.id] = m;
@@ -1757,6 +1838,9 @@
       };
       document.documentElement.style.setProperty('--accent', colors[mode] || 'var(--rail-color)');
 
+      if (mode === 'bus' || mode === 'all') {
+        syncBusMarkers();
+      }
       setupFilters();
       renderUI();
     }
@@ -1770,7 +1854,15 @@
       document.getElementById('stats-panel').classList.toggle('active', tab === 'stats');
 
       if (tab === 'stats') {
-        updateChart();
+        renderStatistics();
+        setTimeout(() => {
+          if (historyChart) {
+            historyChart.resize();
+            updateChart();
+          }
+        }, 50);
+      } else if (tab === 'list') {
+        renderLiveList(getVisibleItems());
       }
     }
 
@@ -1780,9 +1872,14 @@
 
       if (currentMode === 'bus') {
         const items = [
-          { id: 'all', label: 'All Buses' },
+          { id: 'all', label: 'All Finland' },
           { id: 'hsl', label: 'Helsinki (HSL)' },
+          { id: 'tampere', label: 'Tampere (Nysse)' },
           { id: 'foli', label: 'Turku (Föli)' },
+          { id: 'oulu', label: 'Oulu (OSL)' },
+          { id: 'linkki', label: 'Jyväskylä (Linkki)' },
+          { id: 'lahti', label: 'Lahti (LSL)' },
+          { id: 'kuopio', label: 'Kuopio (Vilkku)' },
           { id: 'trunk', label: '🟠 Trunk Lines' }
         ];
         items.forEach(item => {
@@ -1871,9 +1968,9 @@
       if (currentMode === 'bus' || currentMode === 'all') {
         const buses = Object.values(appState.busVehicles).filter(b => {
           if (currentMode === 'bus') {
+            if (activeFilters.bus.has('all')) return true;
             if (activeFilters.bus.has('trunk') && b.isTrunk) return true;
             if (activeFilters.bus.has(b.region)) return true;
-            if (activeFilters.bus.has('all')) return true;
             return false;
           }
           if (query && !(`${b.line} ${b.route} ${b.veh} ${b.region}`).toLowerCase().includes(query)) return false;
@@ -1911,6 +2008,15 @@
         list = list.concat(flights);
       }
 
+      // Bubble selected vehicle to the very top so clicking on map instantly shows it in sidebar
+      if (selectedVehicleId) {
+        const selIdx = list.findIndex(i => i.id === selectedVehicleId);
+        if (selIdx > 0) {
+          const [selItem] = list.splice(selIdx, 1);
+          list.unshift(selItem);
+        }
+      }
+
       return list;
     }
 
@@ -1934,11 +2040,12 @@
         digitransitBanner.style.display = currentMode === 'bus' ? 'block' : 'none';
       }
 
-      // 2. Render Live List
-      renderLiveList(items);
-
-      // 3. Render Statistics
-      renderStatistics();
+      // Tab-aware render: only render the currently visible panel
+      if (currentTab === 'list') {
+        renderLiveList(items);
+      } else if (currentTab === 'stats') {
+        renderStatistics();
+      }
     }
 
     function toggleDigitransitKey(e) {
@@ -1965,8 +2072,6 @@
 
     function renderLiveList(items) {
       const panel = document.getElementById('list-panel');
-      panel.innerHTML = '';
-
       const MAX_ITEMS = 80;
       const displayItems = items.slice(0, MAX_ITEMS);
 
@@ -1988,7 +2093,10 @@
         return;
       }
 
-      displayItems.forEach(item => {
+      const frag = document.createDocumentFragment();
+
+      for (let i = 0; i < displayItems.length; i++) {
+        const item = displayItems[i];
         const el = document.createElement('div');
         el.className = `vehicle-item ${selectedVehicleId === item.id ? 'active' : ''}`;
 
@@ -2018,22 +2126,28 @@
             </div>
           `;
         } else if (item.type === 'bus') {
-          const regionBadge = item.region === 'hsl' ? 'HSL Helsinki' : 'Föli Turku';
+          const regionBadge = item.cityName || (item.region === 'hsl' ? 'HSL Helsinki' : item.region === 'foli' ? 'Föli Turku' : (item.operator || item.region.toUpperCase()));
           const trunkBadge = item.isTrunk ? '<span class="badge-pill" style="background:rgba(255,99,25,0.2);color:#ff6319;font-weight:700;">Trunk Line</span>' : '';
+          const titleColor = item.color || (item.isTrunk ? '#ff6319' : item.region === 'foli' ? '#fdb913' : 'var(--bus-color)');
           el.innerHTML = `
             <div class="vehicle-top">
-              <div class="vehicle-title" style="color:${item.isTrunk ? '#ff6319' : item.region === 'foli' ? '#fdb913' : 'var(--bus-color)'}">
+              <div class="vehicle-title" style="color:${titleColor}">
                 🚌 ${item.route}
               </div>
-              <div class="vehicle-speed">${item.delayStr}</div>
+              <div class="vehicle-speed">${item.delayStr || (item.speed ? item.speed + ' km/h' : 'Normal')}</div>
             </div>
             <div class="vehicle-sub">${regionBadge} • Vehicle #${item.veh}${item.speed ? ` • ${item.speed} km/h` : ''}</div>
             <div class="vehicle-meta">
-              <span class="badge-pill">${regionBadge}</span>
+              <span class="badge-pill" style="background:rgba(255,255,255,0.08);color:${item.color || '#fff'}">${regionBadge}</span>
               ${trunkBadge}
-              <span class="badge-pill">${item.operator}</span>
+              ${item.operator && item.operator !== regionBadge ? `<span class="badge-pill">${item.operator}</span>` : ''}
             </div>
           `;
+          if (selectedVehicleId === item.id) {
+            setTimeout(() => {
+              el.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+            }, 50);
+          }
         } else if (item.type === 'road') {
           el.innerHTML = `
             <div class="vehicle-top">
@@ -2073,15 +2187,17 @@
         }
 
         el.onclick = () => selectVehicle(item.id, true);
-        panel.appendChild(el);
-      });
+        frag.appendChild(el);
+      }
 
       if (items.length > MAX_ITEMS) {
         const more = document.createElement('div');
         more.style.cssText = "padding: 10px; text-align: center; color: var(--text-muted); font-size: 0.75rem;";
         more.innerText = `Showing first ${MAX_ITEMS} of ${items.length} items...`;
-        panel.appendChild(more);
+        frag.appendChild(more);
       }
+
+      panel.replaceChildren(frag);
     }
 
 
@@ -2194,65 +2310,43 @@
       }
     }
 
+    let highlightedMarkerRefs = [];
+
     function applyLineDimming(selectedLine) {
       if (!selectedLine) return;
+      resetDimming();
 
-      // 1. Dim all buses except the ones on this line
-      Object.entries(markers.bus || {}).forEach(([bId, m]) => {
+      // Enable GPU-accelerated CSS dimming on all other map elements
+      document.getElementById('map').classList.add('dimmed-view');
+
+      // Only highlight the matching buses of this line
+      const busMarkers = markers.bus || {};
+      for (const bId in busMarkers) {
         const b = appState.busVehicles[bId];
-        const isSameLine = b && b.line === selectedLine;
-        const iconEl = m.getElement ? m.getElement() : null;
-
-        if (isSameLine) {
-          m.setOpacity(1.0);
+        if (b && b.line === selectedLine) {
+          const m = busMarkers[bId];
           m.setZIndexOffset(1000);
+          const iconEl = m.getElement ? m.getElement() : null;
           if (iconEl) {
-            iconEl.classList.remove('marker-dimmed');
             iconEl.classList.add('marker-highlighted');
-          }
-        } else {
-          m.setOpacity(0.18);
-          m.setZIndexOffset(0);
-          if (iconEl) {
-            iconEl.classList.add('marker-dimmed');
-            iconEl.classList.remove('marker-highlighted');
+            highlightedMarkerRefs.push({ marker: m, el: iconEl });
           }
         }
-      });
-
-      // 2. Dim other layers (trains, road, marine, flight)
-      ['rail', 'hsl', 'road', 'marine', 'flight'].forEach(layerKey => {
-        Object.values(markers[layerKey] || {}).forEach(m => {
-          if (m.setOpacity) m.setOpacity(0.12);
-          else if (m.setStyle) m.setStyle({ opacity: 0.12, fillOpacity: 0.12 });
-          const el = m.getElement ? m.getElement() : null;
-          if (el) el.classList.add('marker-dimmed');
-        });
-      });
+      }
     }
 
     function resetDimming() {
-      // Restore all buses to normal opacity
-      Object.values(markers.bus || {}).forEach(m => {
-        m.setOpacity(1.0);
-        m.setZIndexOffset(0);
-        const el = m.getElement ? m.getElement() : null;
-        if (el) {
-          el.classList.remove('marker-dimmed', 'marker-highlighted');
+      document.getElementById('map').classList.remove('dimmed-view');
+
+      if (highlightedMarkerRefs.length > 0) {
+        for (let i = 0; i < highlightedMarkerRefs.length; i++) {
+          const ref = highlightedMarkerRefs[i];
+          ref.marker.setZIndexOffset(0);
+          if (ref.el) ref.el.classList.remove('marker-highlighted');
         }
-      });
+        highlightedMarkerRefs = [];
+      }
 
-      // Restore other vehicle groups
-      ['rail', 'hsl', 'road', 'marine', 'flight'].forEach(layerKey => {
-        Object.values(markers[layerKey] || {}).forEach(m => {
-          if (m.setOpacity) m.setOpacity(1.0);
-          else if (m.setStyle) m.setStyle({ opacity: 1.0, fillOpacity: 0.75 });
-          const el = m.getElement ? m.getElement() : null;
-          if (el) el.classList.remove('marker-dimmed');
-        });
-      });
-
-      // Clear route line
       if (layerGroups.routeLayer) {
         layerGroups.routeLayer.clearLayers();
       }
@@ -2297,25 +2391,29 @@
         const buses = Object.values(appState.busVehicles);
         const total = buses.length;
         const hslCount = buses.filter(b => b.region === 'hsl').length;
+        const tampereCount = buses.filter(b => b.region === 'tampere').length;
         const foliCount = buses.filter(b => b.region === 'foli').length;
+        const ouluCount = buses.filter(b => b.region === 'oulu').length;
+        const jklCount = buses.filter(b => b.region === 'linkki').length;
+        const otherCount = total - (hslCount + tampereCount + foliCount + ouluCount + jklCount);
         const trunkCount = buses.filter(b => b.isTrunk).length;
-        const onTimeCount = buses.filter(b => b.delay >= -60 && b.delay <= 120).length;
-        const punctuality = total ? Math.round((onTimeCount / total) * 100) : 100;
 
-        document.getElementById('stat-main-title').textContent = 'Total Active Buses';
+        document.getElementById('stat-main-title').textContent = 'Active Buses (Finland)';
         document.getElementById('stat-main-value').textContent = total;
-        document.getElementById('stat-sec1-title').textContent = 'Punctuality';
-        document.getElementById('stat-sec1-value').innerHTML = `${punctuality}<span style="font-size:0.75rem;font-weight:400">% on-time</span>`;
+        document.getElementById('stat-sec1-title').textContent = 'Major Cities';
+        document.getElementById('stat-sec1-value').innerHTML = `18+`;
         document.getElementById('stat-sec2-title').textContent = 'Trunk Lines';
         document.getElementById('stat-sec2-value').textContent = trunkCount;
 
         breakdownEl.innerHTML = `
-          <div><b>Helsinki Region (HSL):</b> ${hslCount}</div>
-          <div><b>Turku Region (Föli):</b> ${foliCount}</div>
-          <div><b style="color:#ff6319;">🟠 Orange Trunk Lines:</b> ${trunkCount}</div>
-          <div><b>On Time (-1m to +2m):</b> ${onTimeCount}</div>
+          <div><b>Helsinki (HSL):</b> ${hslCount}</div>
+          <div><b>Tampere (Nysse):</b> ${tampereCount}</div>
+          <div><b>Turku (Föli):</b> ${foliCount}</div>
+          <div><b>Oulu (OSL):</b> ${ouluCount}</div>
+          <div><b>Jyväskylä (Linkki):</b> ${jklCount}</div>
+          <div><b>Other Cities (Lahti, Kuopio, etc.):</b> ${Math.max(0, otherCount)}</div>
           <div style="margin-top:8px;font-size:0.72rem;color:var(--text-muted);border-top:1px solid var(--border);padding-top:6px;">
-            Streamed live from <b>HSL Real-Time MQTT</b> & <b>Föli SIRI API</b>. Compatible with Digitransit.
+            Nationwide real-time streaming via <b>Digitransit MQTT</b> & <b>HSL WebSocket</b> (Zero API Key required).
           </div>
         `;
       } else if (currentMode === 'rail') {
@@ -2435,15 +2533,47 @@
       }
     }
 
+    function recordUnifiedSnapshot() {
+      const now = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+      const railCount = appState.railTrains.length + Object.keys(appState.hslVehicles).length;
+      const busCount = Object.keys(appState.busVehicles).length;
+      const roadCount = appState.roadVehicles.length;
+      const marineCount = appState.marineVessels.length;
+      const flightCount = appState.flightPlanes.length;
+      const allCount = railCount + busCount + roadCount + marineCount + flightCount;
+
+      const pushMode = (m, cnt) => {
+        const h = historyData[m];
+        if (!h) return;
+        h.times.push(now);
+        h.counts.push(cnt);
+        if (h.times.length > CONFIG.historyMaxPoints) {
+          h.times.shift();
+          h.counts.shift();
+        }
+      };
+
+      pushMode('rail', railCount);
+      pushMode('bus', busCount);
+      pushMode('road', roadCount);
+      pushMode('marine', marineCount);
+      pushMode('flight', flightCount);
+      pushMode('all', allCount);
+
+      if (currentTab === 'stats') {
+        updateChart();
+      }
+    }
+
     function updateChart() {
       const hist = historyData[currentMode] || { times: [], counts: [] };
       const colors = {
-        rail: { border: '#2f81f7', bg: 'rgba(47, 129, 247, 0.12)' },
-        bus: { border: '#007ac9', bg: 'rgba(0, 122, 201, 0.15)' },
-        road: { border: '#ffa500', bg: 'rgba(255, 165, 0, 0.12)' },
-        marine: { border: '#00f2ff', bg: 'rgba(0, 242, 255, 0.12)' },
-        flight: { border: '#ffae00', bg: 'rgba(255, 174, 0, 0.12)' },
-        all: { border: '#00f2ff', bg: 'rgba(0, 242, 255, 0.12)' }
+        rail: { border: '#2f81f7', bg: 'rgba(47, 129, 247, 0.15)' },
+        bus: { border: '#007ac9', bg: 'rgba(0, 122, 201, 0.18)' },
+        road: { border: '#ffa500', bg: 'rgba(255, 165, 0, 0.15)' },
+        marine: { border: '#00f2ff', bg: 'rgba(0, 242, 255, 0.15)' },
+        flight: { border: '#ffae00', bg: 'rgba(255, 174, 0, 0.15)' },
+        all: { border: '#00f2ff', bg: 'rgba(0, 242, 255, 0.15)' }
       };
 
       const c = colors[currentMode] || colors.rail;
@@ -2452,6 +2582,28 @@
       historyChart.data.datasets[0].borderColor = c.border;
       historyChart.data.datasets[0].backgroundColor = c.bg;
       historyChart.data.datasets[0].label = `${currentMode.toUpperCase()} Active Count`;
+
+      // Smart dynamic Y-axis scaling:
+      const counts = hist.counts;
+      if (counts && counts.length > 0) {
+        const minVal = Math.min(...counts);
+        const maxVal = Math.max(...counts);
+        const span = maxVal - minVal;
+
+        // If counts are large (> 25) and variation is modest (< 40% of baseline), zoom in to reveal fluctuations
+        if (minVal > 25 && span < minVal * 0.4) {
+          const pad = Math.max(2, Math.round(span * 0.25) || Math.round(minVal * 0.03));
+          historyChart.options.scales.y.beginAtZero = false;
+          historyChart.options.scales.y.min = Math.max(0, minVal - pad);
+          historyChart.options.scales.y.max = maxVal + pad;
+        } else {
+          // Standard full zero-based scale
+          historyChart.options.scales.y.beginAtZero = true;
+          delete historyChart.options.scales.y.min;
+          delete historyChart.options.scales.y.max;
+        }
+      }
+
       historyChart.update();
     }
 
@@ -2467,15 +2619,265 @@
       fetchFlightData();
     }
 
-    // Search input listener
-    document.getElementById('search-input').addEventListener('input', (e) => {
+    // Debounce helper for silky smooth input handling
+    function debounce(fn, wait) {
+      let timeout;
+      return function(...args) {
+        clearTimeout(timeout);
+        timeout = setTimeout(() => fn.apply(this, args), wait);
+      };
+    }
+
+    // Search input listener (debounced 150ms)
+    document.getElementById('search-input').addEventListener('input', debounce((e) => {
       searchQuery = e.target.value.trim();
       renderUI();
-    });
+    }, 150));
 
     /* ==========================================================================
        6. BOOTSTRAP APPLICATION
        ========================================================================== */
+
+    // --- B3. LIGHTWEIGHT BINARY GTFS-RT PROTOBUF DECODER ---
+    function decodeVarint(bytes, pos) {
+      let res = 0, shift = 0;
+      while (pos < bytes.length) {
+        const b = bytes[pos++];
+        res |= (b & 0x7f) << shift;
+        shift += 7;
+        if (!(b & 0x80)) break;
+      }
+      return [res, pos];
+    }
+
+    function decodeGtfsRtPosition(input) {
+      try {
+        let bytes, view;
+        if (input instanceof Uint8Array) {
+          bytes = input;
+          view = new DataView(input.buffer, input.byteOffset, input.byteLength);
+        } else if (input instanceof ArrayBuffer) {
+          bytes = new Uint8Array(input);
+          view = new DataView(input);
+        } else if (input && input.buffer) {
+          bytes = new Uint8Array(input.buffer, input.byteOffset || 0, input.byteLength || input.length);
+          view = new DataView(input.buffer, input.byteOffset || 0, input.byteLength || input.length);
+        } else {
+          bytes = new Uint8Array(input);
+          view = new DataView(bytes.buffer);
+        }
+        let pos = 0;
+        let lat = null, lon = null, bearing = null, speed = null;
+
+        while (pos < bytes.length) {
+          const tagWire = bytes[pos++];
+          const wire = tagWire & 7;
+          const tag = tagWire >> 3;
+          if (wire === 2) {
+            const [len, newPos] = decodeVarint(bytes, pos);
+            pos = newPos;
+            const end = pos + len;
+            if (tag === 2) { // FeedEntity
+              while (pos < end) {
+                const tW = bytes[pos++];
+                const w = tW & 7;
+                const t = tW >> 3;
+                if (w === 2) {
+                  const [l2, p2] = decodeVarint(bytes, pos);
+                  pos = p2;
+                  const end2 = pos + l2;
+                  if (t === 4) { // vehicle
+                    while (pos < end2) {
+                      const tW2 = bytes[pos++];
+                      const w2 = tW2 & 7;
+                      const t2 = tW2 >> 3;
+                      if (w2 === 2) {
+                        const [l3, p3] = decodeVarint(bytes, pos);
+                        pos = p3;
+                        const end3 = pos + l3;
+                        if (t2 === 2) { // position
+                          while (pos < end3) {
+                            const tW3 = bytes[pos++];
+                            const w3 = tW3 & 7;
+                            const t3 = tW3 >> 3;
+                            if (w3 === 5) {
+                              const val = view.getFloat32(pos, true);
+                              pos += 4;
+                              if (t3 === 1) lat = val;
+                              else if (t3 === 2) lon = val;
+                              else if (t3 === 3) bearing = val;
+                              else if (t3 === 4) speed = val;
+                            } else {
+                              pos = end3;
+                              break;
+                            }
+                          }
+                        } else {
+                          pos = end3;
+                        }
+                      } else if (w2 === 0) {
+                        const [, p] = decodeVarint(bytes, pos);
+                        pos = p;
+                      } else {
+                        pos = end2;
+                      }
+                    }
+                  } else {
+                    pos = end2;
+                  }
+                } else if (w === 0) {
+                  const [, p] = decodeVarint(bytes, pos);
+                  pos = p;
+                } else {
+                  pos = end;
+                }
+              }
+            } else {
+              pos = end;
+            }
+          } else if (wire === 0) {
+            const [, p] = decodeVarint(bytes, pos);
+            pos = p;
+          } else {
+            break;
+          }
+        }
+        return { lat, lon, bearing, speed };
+      } catch (e) {
+        return null;
+      }
+    }
+
+    // --- B4. NATIONWIDE DIGITRANSIT MQTT CLIENT (Tampere, Oulu, Jyväskylä, Lahti, Kuopio, etc.) ---
+    let dtMqttClient = null;
+    function initDigitransitMqtt() {
+      try {
+        const clientId = "dt-client-" + Math.random().toString(36).substring(2, 10);
+        const client = new Paho.MQTT.Client("mqtt.digitransit.fi", 443, "/", clientId);
+        dtMqttClient = client;
+
+        client.onConnectionLost = (responseObject) => {
+          if (responseObject && responseObject.errorCode !== 0) {
+            console.warn("Digitransit MQTT connection lost, reconnecting in 5s...", responseObject.errorMessage);
+            setTimeout(initDigitransitMqtt, 5000);
+          }
+        };
+
+        client.onMessageArrived = (message) => {
+          try {
+            // Topic format: /gtfsrt/vp/<feed_id>/...
+            const topicParts = message.destinationName.split('/');
+            if (topicParts.length < 4) return;
+            const cityKey = (topicParts[3] || '').toLowerCase();
+            
+            // Skip digitraffic rail or foli (since foli is loaded via full GTFS shapes)
+            if (cityKey === 'digitraffic' || cityKey === 'foli') return;
+
+            // Decode binary GTFS-RT Position (zero-copy)
+            const pos = decodeGtfsRtPosition(message.payloadBytes);
+            if (!pos || !pos.lat || !pos.lon) return;
+
+            // Sanity check coordinates are inside Finland
+            if (pos.lat < 59 || pos.lat > 71 || pos.lon < 19 || pos.lon > 32) return;
+
+            const non_empty = topicParts.filter(p => p !== '');
+            if (non_empty.length < 5) return;
+
+            let agencyColor = '#007ac9';
+            let line = non_empty[4] || 'Bus';
+
+            if (non_empty.length >= 2) {
+              const last = non_empty[non_empty.length - 1];
+              const secondLast = non_empty[non_empty.length - 2];
+              if (/^[0-9A-Fa-f]{6}$/.test(last)) {
+                agencyColor = '#' + last;
+                if (secondLast && !secondLast.includes(';') && secondLast.length <= 8) {
+                  line = secondLast;
+                }
+              } else if (last && !last.includes(';') && last.length <= 8) {
+                line = last;
+              }
+            }
+
+            const rawDest = non_empty[6] || '';
+            const destName = rawDest ? decodeURIComponent(rawDest).replace(/_/g, ' ') : '';
+            const vehId = non_empty[10] || non_empty[9] || non_empty[8] || String(Math.floor(Math.random() * 9000) + 1000);
+            const cityName = CONFIG.cityNames[cityKey] || non_empty[2] || 'Finland';
+            const id = `dt-${cityKey}-${vehId}`;
+            const isTrunk = CONFIG.trunkLines.includes(line);
+
+            const existing = appState.busVehicles[id];
+            const path = existing && existing.path ? existing.path : [];
+            path.push([pos.lat, pos.lon]);
+            if (path.length > 25) path.shift();
+
+            const destText = destName ? ` → ${destName}` : '';
+            const route = `Line ${line}${destText}`;
+
+            const item = {
+              id,
+              type: 'bus',
+              region: cityKey,
+              cityName,
+              isTrunk,
+              line,
+              color: agencyColor,
+              veh: vehId,
+              destination: destName,
+              route,
+              operator: cityName,
+              speed: pos.speed ? Math.round(pos.speed * 3.6) : 0,
+              lat: pos.lat,
+              lon: pos.lon,
+              heading: pos.bearing || 0,
+              delay: 0,
+              delayStr: 'Normal',
+              path,
+              timestamp: Date.now()
+            };
+
+            appState.busVehicles[id] = item;
+            queueBusMarkerUpdate(item);
+          } catch (e) {
+            // Ignore parse errors on individual frames
+          }
+        };
+
+        client.connect({
+          useSSL: true,
+          timeout: 12,
+          keepAliveInterval: 30,
+          cleanSession: true,
+          onSuccess: () => {
+            console.log("Connected to Nationwide Digitransit MQTT stream successfully!");
+            // Subscribe to major Finnish cities
+            client.subscribe("/gtfsrt/vp/tampere/#");
+            client.subscribe("/gtfsrt/vp/OULU/#");
+            client.subscribe("/gtfsrt/vp/LINKKI/#");
+            client.subscribe("/gtfsrt/vp/Lahti/#");
+            client.subscribe("/gtfsrt/vp/Kuopio/#");
+            client.subscribe("/gtfsrt/vp/Joensuu/#");
+            client.subscribe("/gtfsrt/vp/Vaasa/#");
+            client.subscribe("/gtfsrt/vp/Lappeenranta/#");
+            client.subscribe("/gtfsrt/vp/Rovaniemi/#");
+            client.subscribe("/gtfsrt/vp/Hameenlinna/#");
+            client.subscribe("/gtfsrt/vp/Kotka/#");
+            client.subscribe("/gtfsrt/vp/Kouvola/#");
+            client.subscribe("/gtfsrt/vp/Pori/#");
+            client.subscribe("/gtfsrt/vp/Mikkeli/#");
+            client.subscribe("/gtfsrt/vp/Kajaani/#");
+            client.subscribe("/gtfsrt/vp/Salo/#");
+          },
+          onFailure: (err) => {
+            console.warn("Digitransit MQTT connect notice, retrying in 6s:", err);
+            setTimeout(initDigitransitMqtt, 6000);
+          }
+        });
+      } catch (err) {
+        console.warn("Digitransit MQTT init error:", err);
+      }
+    }
+
     async function init() {
       console.log("Starting Traffic Tracker Finland Monolith App...");
       setupFilters();
@@ -2500,8 +2902,9 @@
         fetchFlightData()
       ]);
 
-      // 3. Connect real-time HSL MQTT stream
+      // 3. Connect real-time HSL & Nationwide Digitransit MQTT streams
       initHslMqtt();
+      initDigitransitMqtt();
 
       // 4. Register Polling Timers
       setInterval(fetchRailLocations, CONFIG.intervals.rail);
@@ -2509,6 +2912,10 @@
       setInterval(fetchRoadData, CONFIG.intervals.road);
       setInterval(fetchMarineLocations, CONFIG.intervals.marine);
       setInterval(fetchFlightData, CONFIG.intervals.flight);
+
+      // Synchronized unified history snapshot recorder (every 15 seconds)
+      recordUnifiedSnapshot();
+      setInterval(recordUnifiedSnapshot, 15000);
 
       // Metadata refresh (every 10 minutes)
       setInterval(fetchRailMetadata, 600000);
