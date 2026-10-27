@@ -545,6 +545,114 @@
       filter: drop-shadow(0 2px 4px rgba(0,0,0,0.7));
     }
 
+    /* Marine Harbour Markers & Route Card */
+    #marine-route-card {
+      position: absolute;
+      top: 76px;
+      right: 1rem;
+      z-index: 1000;
+      width: 320px;
+      background: var(--surface-glass);
+      backdrop-filter: blur(14px);
+      -webkit-backdrop-filter: blur(14px);
+      border: 1px solid rgba(0, 242, 255, 0.45);
+      border-radius: 14px;
+      padding: 0.9rem 1rem;
+      box-shadow: 0 10px 30px rgba(0,0,0,0.55);
+      display: none;
+    }
+    #marine-route-card.active { display: block; }
+    .mrc-header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 0.5rem; }
+    .mrc-close { background: none; border: none; color: var(--text-muted); cursor: pointer; font-size: 1rem; padding: 0 4px; }
+    .mrc-close:hover { color: #fff; }
+    .mrc-ports {
+      display: flex; align-items: center; justify-content: space-between;
+      background: rgba(0,0,0,0.32); border: 1px solid var(--border);
+      border-radius: 9px; padding: 0.55rem 0.75rem; margin: 0.5rem 0;
+    }
+    .mrc-port-box { display: flex; flex-direction: column; }
+    .mrc-port-label { font-size: 0.62rem; text-transform: uppercase; letter-spacing: 0.7px; color: var(--text-muted); }
+    .mrc-port-name { font-size: 0.85rem; font-weight: 700; margin-top: 2px; }
+    .mrc-row { display: flex; justify-content: space-between; align-items: center; font-size: 0.78rem; padding-top: 4px; }
+
+    .harbour-orig-marker {
+      width: 26px; height: 26px; border-radius: 50%;
+      background: rgba(13, 17, 23, 0.94);
+      border: 2px solid #3fb950;
+      color: #3fb950;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 13px;
+      box-shadow: 0 0 12px rgba(63, 185, 80, 0.65);
+    }
+    .harbour-dest-wrapper {
+      position: relative;
+      width: 34px; height: 34px;
+      display: flex; align-items: center; justify-content: center;
+    }
+    .harbour-dest-pulse {
+      position: absolute;
+      width: 34px; height: 34px;
+      border-radius: 50%;
+      background: rgba(255, 174, 0, 0.35);
+      border: 2px solid #ffae00;
+      animation: harbour-pulse-ring 1.8s infinite ease-out;
+    }
+    .harbour-dest-core {
+      position: relative;
+      z-index: 2;
+      width: 24px; height: 24px;
+      border-radius: 50%;
+      background: #0d1117;
+      border: 2.5px solid #ffae00;
+      color: #ffae00;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 13px;
+      box-shadow: 0 0 15px rgba(255, 174, 0, 0.95);
+    }
+    @keyframes harbour-pulse-ring {
+      0% { transform: scale(0.75); opacity: 1; }
+      100% { transform: scale(1.8); opacity: 0; }
+    }
+    .leaflet-tooltip.harbour-label-orig {
+      background: rgba(13, 17, 23, 0.94);
+      border: 1px solid #3fb950;
+      color: #e6edf3;
+      font-family: 'Inter', sans-serif;
+      font-size: 0.72rem;
+      padding: 4px 8px;
+      border-radius: 6px;
+      box-shadow: 0 4px 12px rgba(0,0,0,0.5);
+    }
+    .leaflet-tooltip.harbour-label-dest {
+      background: rgba(13, 17, 23, 0.96);
+      border: 1.5px solid #ffae00;
+      color: #e6edf3;
+      font-family: 'Inter', sans-serif;
+      font-size: 0.74rem;
+      padding: 5px 9px;
+      border-radius: 6px;
+      box-shadow: 0 0 16px rgba(255, 174, 0, 0.4);
+    }
+
+    /* Hollow harbour highlight rings (never cover ships moored in the harbour) */
+    .harbour-orig-ring {
+      width: 24px; height: 24px; border-radius: 50%;
+      background: rgba(63, 185, 80, 0.10);
+      border: 2px solid #3fb950;
+      box-shadow: 0 0 10px rgba(63, 185, 80, 0.55);
+      pointer-events: none;
+    }
+    .harbour-dest-ring {
+      position: relative; z-index: 2;
+      width: 20px; height: 20px; border-radius: 50%;
+      background: rgba(255, 174, 0, 0.12);
+      border: 2.5px solid #ffae00;
+      box-shadow: 0 0 14px rgba(255, 174, 0, 0.85);
+      pointer-events: none;
+    }
+    .harbour-dest-wrapper, .harbour-dest-pulse { pointer-events: none; }
+    .leaflet-tooltip.harbour-label-orig, .leaflet-tooltip.harbour-label-dest { pointer-events: none; white-space: nowrap; }
+
     /* Responsive Design */
     @media (max-width: 768px) {
       header {
@@ -657,6 +765,36 @@
       </div>
     </div>
 
+    <!-- Selected Marine Route & ETA Card -->
+    <div id="marine-route-card">
+      <div class="mrc-header">
+        <div>
+          <div id="mrc-name" style="font-weight:700; color:var(--marine-color); font-size:0.98rem;"></div>
+          <div id="mrc-sub" style="font-size:0.72rem; color:var(--text-muted);"></div>
+        </div>
+        <button class="mrc-close" onclick="selectedVehicleId=null; resetDimming(); renderLiveList(getVisibleItems());" title="Clear selection">✕</button>
+      </div>
+      <div class="mrc-ports">
+        <div class="mrc-port-box">
+          <span class="mrc-port-label">⚓ Departure</span>
+          <span class="mrc-port-name" style="color:#3fb950;" id="mrc-origin">-</span>
+        </div>
+        <div style="color:var(--text-muted); font-size:1.1rem; font-weight:700;">→</div>
+        <div class="mrc-port-box" style="text-align:right;">
+          <span class="mrc-port-label">🎯 Destination</span>
+          <span class="mrc-port-name" style="color:#ffae00;" id="mrc-dest">-</span>
+        </div>
+      </div>
+      <div class="mrc-row">
+        <span style="color:var(--text-muted);">Estimated Arrival (ETA):</span>
+        <span id="mrc-eta" style="color:#ffae00; font-weight:700;">-</span>
+      </div>
+      <div class="mrc-row">
+        <span style="color:var(--text-muted);">Current Speed / Heading:</span>
+        <span id="mrc-kinematics" style="color:#3fb950; font-weight:600;">-</span>
+      </div>
+    </div>
+
     <!-- Fullscreen Map -->
     <div id="map"></div>
   </div>
@@ -673,7 +811,7 @@
         rail: 15000,
         bus: 15000,
         road: 60000,
-        marine: 60000,
+        marine: 15000,
         flight: 25000,
         cleanupHSL: 30000
       },
@@ -1480,34 +1618,533 @@
       });
     }
 
-    // --- D. MARINE AIS DATA ---
+    // --- D. MARINE AIS DATA, HARBOUR CATALOG, PORT CALLS & LIVE ROUTES ---
+    const MARINE_CUSTOM_PORTS = {
+      "FIHEL": { code: "FIHEL", name: "Helsinki", lat: 60.155, lon: 24.955 },
+      "FIVSS": { code: "FIVSS", name: "Vuosaari (Helsinki)", lat: 60.215, lon: 25.190 },
+      "FIHKO": { code: "FIHKO", name: "Hanko", lat: 59.820, lon: 22.970 },
+      "FITKU": { code: "FITKU", name: "Turku", lat: 60.435, lon: 22.220 },
+      "FINLI": { code: "FINLI", name: "Naantali", lat: 60.468, lon: 22.026 },
+      "FIMHQ": { code: "FIMHQ", name: "Mariehamn", lat: 60.093, lon: 19.928 },
+      "FILAN": { code: "FILAN", name: "Långnäs", lat: 60.116, lon: 20.298 },
+      "FIECK": { code: "FIECK", name: "Eckerö", lat: 60.223, lon: 19.538 },
+      "FIKTK": { code: "FIKTK", name: "Kotka", lat: 60.460, lon: 26.945 },
+      "FIHMN": { code: "FIHMN", name: "Hamina", lat: 60.535, lon: 27.185 },
+      "FIINK": { code: "FIINK", name: "Inkoo", lat: 60.020, lon: 23.920 },
+      "FIVKO": { code: "FIVKO", name: "Valko (Loviisa)", lat: 60.412, lon: 26.258 },
+      "FIRAU": { code: "FIRAU", name: "Rauma", lat: 61.127, lon: 21.452 },
+      "FIPOR": { code: "FIPOR", name: "Pori", lat: 61.590, lon: 21.488 },
+      "FIVAA": { code: "FIVAA", name: "Vaasa", lat: 63.088, lon: 21.560 },
+      "FIKOK": { code: "FIKOK", name: "Kokkola", lat: 63.842, lon: 23.025 },
+      "FIPRS": { code: "FIPRS", name: "Pietarsaari", lat: 63.708, lon: 22.688 },
+      "FIRAA": { code: "FIRAA", name: "Raahe", lat: 64.665, lon: 24.405 },
+      "FIOUL": { code: "FIOUL", name: "Oulu", lat: 65.000, lon: 25.415 },
+      "FIKEM": { code: "FIKEM", name: "Kemi", lat: 65.670, lon: 24.515 },
+      "FITOR": { code: "FITOR", name: "Tornio", lat: 65.748, lon: 24.168 },
+      "FIKAS": { code: "FIKAS", name: "Kaskinen", lat: 62.382, lon: 21.218 },
+      "FIUKI": { code: "FIUKI", name: "Uusikaupunki", lat: 60.795, lon: 21.385 },
+      "FIPAR": { code: "FIPAR", name: "Parainen", lat: 60.285, lon: 22.290 },
+      "FIFOR": { code: "FIFOR", name: "Förby", lat: 60.090, lon: 22.868 },
+      "FISKV": { code: "FISKV", name: "Sköldvik (Porvoo)", lat: 60.304, lon: 25.546 },
+      "FIKRS": { code: "FIKRS", name: "Kristiinankaupunki", lat: 62.268, lon: 21.365 },
+      "FISAL": { code: "FISAL", name: "Salo", lat: 60.355, lon: 23.100 },
+      "FITEI": { code: "FITEI", name: "Teijo", lat: 60.254, lon: 22.946 },
+      "FIKUS": { code: "FIKUS", name: "Kustavi", lat: 60.536, lon: 21.352 },
+      "EETLL": { code: "EETLL", name: "Tallinn", lat: 59.448, lon: 24.765 },
+      "EEVAN": { code: "EEVAN", name: "Tallinn (Vanasadam)", lat: 59.445, lon: 24.768 },
+      "EEMUG": { code: "EEMUG", name: "Muuga", lat: 59.492, lon: 24.958 },
+      "EEPLS": { code: "EEPLS", name: "Paldiski", lat: 59.350, lon: 24.048 },
+      "EESLM": { code: "EESLM", name: "Sillamäe", lat: 59.412, lon: 27.738 },
+      "EERMS": { code: "EERMS", name: "Roomassaare", lat: 58.213, lon: 22.507 },
+      "EEPRN": { code: "EEPRN", name: "Pärnu", lat: 58.382, lon: 24.475 },
+      "SESTO": { code: "SESTO", name: "Stockholm", lat: 59.335, lon: 18.110 },
+      "SEKAP": { code: "SEKAP", name: "Kapellskär", lat: 59.718, lon: 19.067 },
+      "SEKPS": { code: "SEKPS", name: "Kapellskär", lat: 59.718, lon: 19.067 },
+      "SEGRH": { code: "SEGRH", name: "Grisslehamn", lat: 60.098, lon: 18.814 },
+      "SEGOT": { code: "SEGOT", name: "Göteborg", lat: 57.695, lon: 11.895 },
+      "SEPIT": { code: "SEPIT", name: "Piteå", lat: 65.235, lon: 21.568 },
+      "SENOT": { code: "SENOT", name: "Norrsundet", lat: 60.930, lon: 17.155 },
+      "SESSR": { code: "SESSR", name: "Sandarne", lat: 61.263, lon: 17.175 },
+      "SEGVX": { code: "SEGVX", name: "Gävle", lat: 60.690, lon: 17.220 },
+      "SELUL": { code: "SELUL", name: "Luleå", lat: 65.555, lon: 22.250 },
+      "SEUME": { code: "SEUME", name: "Umeå", lat: 63.692, lon: 20.340 },
+      "SESDL": { code: "SESDL", name: "Sundsvall", lat: 62.390, lon: 17.345 },
+      "SENYN": { code: "SENYN", name: "Nynäshamn", lat: 58.905, lon: 17.955 },
+      "SEOXE": { code: "SEOXE", name: "Oxelösund", lat: 58.665, lon: 17.110 },
+      "SENRK": { code: "SENRK", name: "Norrköping", lat: 58.610, lon: 16.225 },
+      "RUULU": { code: "RUULU", name: "Ust-Luga", lat: 59.685, lon: 28.402 },
+      "RULED": { code: "RULED", name: "St. Petersburg", lat: 59.915, lon: 30.220 },
+      "RUPRI": { code: "RUPRI", name: "Primorsk", lat: 60.340, lon: 28.705 },
+      "RUVYS": { code: "RUVYS", name: "Vysotsk", lat: 60.620, lon: 28.570 },
+      "RUKGD": { code: "RUKGD", name: "Kaliningrad", lat: 54.695, lon: 20.450 },
+      "RUKLD": { code: "RUKLD", name: "Kaliningrad", lat: 54.695, lon: 20.450 },
+      "RUMMK": { code: "RUMMK", name: "Murmansk", lat: 68.975, lon: 33.055 },
+      "DETRV": { code: "DETRV", name: "Travemünde", lat: 53.958, lon: 10.872 },
+      "DERSK": { code: "DERSK", name: "Rostock", lat: 54.150, lon: 12.100 },
+      "DEKEL": { code: "DEKEL", name: "Kiel", lat: 54.330, lon: 10.155 },
+      "DELBC": { code: "DELBC", name: "Lübeck", lat: 53.885, lon: 10.700 },
+      "DEBRB": { code: "DEBRB", name: "Brunsbüttel", lat: 53.888, lon: 9.142 },
+      "DEWVN": { code: "DEWVN", name: "Wilhelmshaven", lat: 53.518, lon: 8.148 },
+      "DEHAM": { code: "DEHAM", name: "Hamburg", lat: 53.540, lon: 9.970 },
+      "DEBRV": { code: "DEBRV", name: "Bremerhaven", lat: 53.550, lon: 8.560 },
+      "PLGDY": { code: "PLGDY", name: "Gdynia", lat: 54.533, lon: 18.550 },
+      "PLGDN": { code: "PLGDN", name: "Gdańsk", lat: 54.405, lon: 18.670 },
+      "PLSWI": { code: "PLSWI", name: "Świnoujście", lat: 53.910, lon: 14.260 },
+      "PLSZZ": { code: "PLSZZ", name: "Szczecin", lat: 53.430, lon: 14.580 },
+      "LVRIX": { code: "LVRIX", name: "Riga", lat: 57.035, lon: 24.045 },
+      "LVVNT": { code: "LVVNT", name: "Ventspils", lat: 57.400, lon: 21.545 },
+      "LVLPX": { code: "LVLPX", name: "Liepāja", lat: 56.525, lon: 20.995 },
+      "LTKLJ": { code: "LTKLJ", name: "Klaipėda", lat: 55.705, lon: 21.120 },
+      "NLRTM": { code: "NLRTM", name: "Rotterdam", lat: 51.950, lon: 4.140 },
+      "NLAMS": { code: "NLAMS", name: "Amsterdam", lat: 52.410, lon: 4.800 },
+      "NLVLI": { code: "NLVLI", name: "Vlissingen", lat: 51.445, lon: 3.595 },
+      "NLMOE": { code: "NLMOE", name: "Moerdijk", lat: 51.690, lon: 4.580 },
+      "BEANR": { code: "BEANR", name: "Antwerp", lat: 51.260, lon: 4.350 },
+      "BEZEE": { code: "BEZEE", name: "Zeebrugge", lat: 51.335, lon: 3.205 },
+      "TRISK": { code: "TRISK", name: "Iskenderun", lat: 36.592, lon: 36.175 },
+      "TRALI": { code: "TRALI", name: "Aliağa", lat: 38.805, lon: 26.945 },
+      "EGPSD": { code: "EGPSD", name: "Port Said", lat: 31.265, lon: 32.305 },
+      "EGSUZ": { code: "EGSUZ", name: "Suez", lat: 29.955, lon: 32.555 },
+      "ELDAB": { code: "ELDAB", name: "El Dabaa", lat: 31.045, lon: 28.440 },
+      "GIGIB": { code: "GIGIB", name: "Gibraltar", lat: 36.140, lon: -5.365 },
+      "NOGLO": { code: "NOGLO", name: "Glomfjord", lat: 66.818, lon: 13.942 },
+      "NOMON": { code: "NOMON", name: "Mongstad", lat: 60.812, lon: 5.032 },
+      "PACTB": { code: "PACTB", name: "Cristóbal", lat: 9.350, lon: -79.905 }
+    };
+
+    const MARINE_NAME_ALIASES = {
+      "UST LUGA": "RUULU", "UST-LUGA": "RUULU", "USTLUGA": "RUULU", "RU UST-LUGA": "RUULU", "RU_ULU": "RUULU",
+      "ST.PETERBURG": "RULED", "ST.PETERSBURG": "RULED", "SAINT-PETERSBURG": "RULED", "ST.BURG": "RULED", "SPB": "RULED",
+      "PRIMORSK": "RUPRI", "VYSOTSK": "RUVYS", "KALININGRAD": "RUKGD", "EL DABAA": "ELDAB", "PORT SAID": "EGPSD",
+      "WILHELMSHAVEN": "DEWVN", "TRAVEMUNDE": "DETRV", "TRAVEMUENDE": "DETRV", "GDYNIA": "PLGDY", "GDANSK": "PLGDN",
+      "GOTEBORG": "SEGOT", "GOTHENBURG": "SEGOT", "STOCKHOLM": "SESTO", "KAPELLSKAR": "SEKAP", "GRISSLEHAMN": "SEGRH",
+      "TALLINN": "EETLL", "MUUGA": "EEMUG", "PALDISKI": "EEPLS", "SILLAMAE": "EESLM", "HELSINKI": "FIHEL",
+      "VUOSAARI": "FIVSS", "HANKO": "FIHKO", "HANGO": "FIHKO", "TURKU": "FITKU", "ABO": "FITKU", "NAANTALI": "FINLI",
+      "MARIEHAMN": "FIMHQ", "LANGNAS": "FILAN", "ECKERO": "FIECK", "KOTKA": "FIKTK", "HAMINA": "FIHMN",
+      "RAUMA": "FIRAU", "PORI": "FIPOR", "VAASA": "FIVAA", "KOKKOLA": "FIKOK", "PIETARSAARI": "FIPRS",
+      "JAKOBSTAD": "FIPRS", "RAAHE": "FIRAA", "OULU": "FIOUL", "KEMI": "FIKEM", "TORNIO": "FITOR",
+      "INKOO": "FIINK", "INGA": "FIINK", "LOVIISA": "FIVKO", "VALKO": "FIVKO", "PORVOO": "FISKV", "SKOLDVIK": "FISKV",
+      "UUSIKAUPUNKI": "FIUKI", "KASKINEN": "FIKAS", "PARAINEN": "FIPAR", "FORBY": "FIFOR"
+    };
+
+    const BALTIC_HUB_CODES = [
+      "FIHEL", "FIVSS", "FIHKO", "FITKU", "FINLI", "FIMHQ", "FILAN", "FIECK",
+      "FIKTK", "FIHMN", "FIINK", "FIVKO", "FIRAU", "FIPOR", "FIVAA", "FIKOK",
+      "FIPRS", "FIRAA", "FIOUL", "FIKEM", "FITOR", "FIKAS", "FIUKI", "FISKV",
+      "EETLL", "EEMUG", "EEPLS", "EESLM", "EERMS", "SESTO", "SEKAP", "SEGRH",
+      "SEGVX", "SELUL", "SEUME", "SESDL", "SENYN", "SEOXE", "RUULU", "RULED",
+      "RUPRI", "RUVYS", "RUKGD", "DETRV", "DERSK", "DEKEL", "PLGDY", "PLGDN",
+      "LVRIX", "LVVNT", "LTKLJ"
+    ];
+
+    appState.marinePortsByCode = Object.assign({}, MARINE_CUSTOM_PORTS);
+    appState.marinePortsByName = {};
+    appState.marinePortCalls = {};
+    appState.marineTrails = {};
+    appState.marineOrigins = {};
+
+    // --- Maritime fairway / sea-lane graph (generated from marine_tracker.py) ---
+    const SEA_NODES = {"W_SPB_CH": [59.95, 29.85], "W_KRON": [60.0, 29.45], "W_USTLUGA_N": [59.82, 28.35], "W_SESKAR": [60.03, 28.25], "W_VYSOTSK_S": [60.48, 28.48], "W_PRIMORSK_S": [60.26, 28.62], "W_SOMMERS": [60.16, 27.6], "W_HAMINA_S": [60.36, 27.18], "W_KOTKA_S": [60.32, 26.94], "W_HOGLAND_N": [60.15, 26.95], "W_HOGLAND_S": [59.85, 26.9], "W_SILLAMAE_N": [59.56, 27.72], "W_ORRENGRUND": [60.12, 26.42], "W_LOVIISA_S": [60.24, 26.26], "W_KALBADA": [59.95, 25.6], "W_SKOLDVIK_S": [60.16, 25.55], "W_VUOSAARI_S": [60.08, 25.22], "W_HARMAJA": [60.085, 24.97], "W_HEL_LIGHT": [59.945, 24.925], "W_MUUGA_N": [59.58, 25.0], "W_TALLINN_N": [59.62, 24.76], "W_TALLINN_BAY": [59.5, 24.75], "W_PORKKALA": [59.84, 24.45], "W_NAISSAAR": [59.65, 24.4], "W_INKOO_S": [59.88, 23.95], "W_PALDISKI_N": [59.48, 23.95], "W_JUSSARO": [59.73, 23.58], "W_OSMUSAAR": [59.42, 23.3], "W_RUSSARO": [59.72, 22.96], "W_HANKO_W": [59.78, 22.75], "W_BENGTSKAR": [59.65, 22.48], "W_HIIUMAA_N": [59.25, 22.4], "W_HIIUMAA_W": [58.95, 21.8], "W_FORBY_W": [60.03, 22.72], "W_SALO_S": [60.18, 22.88], "W_PARAINEN_S": [60.16, 22.25], "W_AIRISTO": [60.26, 22.12], "W_NAANTALI_S": [60.41, 22.05], "W_KORPO": [60.14, 21.6], "W_UTO": [59.74, 21.35], "W_KOKAR": [59.92, 20.95], "W_SOTTUNGA": [60.08, 20.65], "W_LANGNAS_E": [60.115, 20.35], "W_LEDSUND": [59.95, 20.15], "W_MARIEHAMN_S": [59.98, 19.93], "W_NYHAMN": [59.92, 19.85], "W_FLOTJAN": [59.8, 19.75], "W_SODERARM": [59.75, 19.42], "W_KAPELL_E": [59.72, 19.18], "W_FURUSUND": [59.64, 18.95], "W_SANDHAMN": [59.42, 19.05], "W_VAXHOLM": [59.38, 18.38], "W_ALAND_S": [59.95, 19.25], "W_GRISSLE_E": [60.1, 18.98], "W_ECKERO_W": [60.22, 19.38], "W_MARKET": [60.28, 19.15], "W_KUSTAVI_W": [60.55, 21.1], "W_BOTH_SW": [60.65, 18.8], "W_BOTH_SE": [60.65, 20.5], "W_UKI_W": [60.8, 20.95], "W_RAUMA_W": [61.13, 21.1], "W_PORI_W": [61.6, 21.1], "W_GAVLE_E": [60.72, 17.65], "W_NORRSUND_E": [60.95, 17.55], "W_SANDARNE_E": [61.26, 17.65], "W_SUNDSVALL_E": [62.35, 17.95], "W_BOTH_MW": [61.8, 18.8], "W_BOTH_ME": [61.95, 20.75], "W_KRISTIINA_W": [62.22, 21.05], "W_KASKINEN_W": [62.35, 20.9], "W_KVARKEN_S": [62.85, 20.5], "W_KVARKEN_M": [63.15, 20.7], "W_VAASA_W": [63.12, 21.15], "W_KVARKEN_N": [63.5, 21.1], "W_UMEA_E": [63.58, 20.55], "W_BAY_S": [63.8, 21.95], "W_PIETAR_W": [63.76, 22.35], "W_KOKKOLA_W": [63.92, 22.65], "W_RAAHE_W": [64.65, 23.85], "W_OULU_W": [65.08, 24.35], "W_OULU_CH": [65.04, 25.1], "W_KEMI_S": [65.45, 24.4], "W_LULEA_E": [65.35, 22.65], "W_PITEA_E": [65.1, 21.95], "W_BOGSKAR": [59.45, 20.4], "W_BALT_NC": [59.1, 20.6], "W_GOTSKA": [58.55, 19.55], "W_LANDSORT": [58.65, 18.15], "W_OXELO_E": [58.6, 17.45], "W_GOTLAND_E": [57.5, 19.45], "W_GOTLAND_W": [57.6, 17.5], "W_IRBE": [57.75, 21.7], "W_ROOMA_S": [58.05, 22.45], "W_RIGA_GULF": [57.35, 23.55], "W_PARNU_W": [58.15, 24.15], "W_VENTSPILS_W": [57.4, 21.1], "W_LIEPAJA_W": [56.52, 20.55], "W_KLAIPEDA_W": [55.72, 20.6], "W_KALIN_W": [54.7, 19.85], "W_GDANSK_N": [54.8, 18.85], "W_HOBURGEN": [56.75, 18.45], "W_OLAND_S": [56.0, 16.75], "W_BORNHOLM_N": [55.45, 14.65], "W_BORNHOLM_S": [54.8, 15.2], "W_SWINO_N": [54.15, 14.28], "W_ARKONA": [54.75, 13.7], "W_DARSS": [54.55, 12.4], "W_ROSTOCK_N": [54.3, 12.08], "W_FEHMARN": [54.52, 11.35], "W_LUBECK_BAY": [54.12, 11.0], "W_KIEL_BIGHT": [54.45, 10.3], "W_KIEL_WEST": [53.89, 9.15], "W_ELBE_OUT": [53.98, 8.3], "W_FALSTERBO": [55.32, 12.75], "W_SOUND": [55.85, 12.65], "W_KATTEGAT": [56.85, 11.65], "W_GOTEBORG_W": [57.65, 11.45], "W_SKAGEN": [57.85, 10.6], "W_SKAGERRAK": [57.8, 8.0], "W_HELGOLAND": [54.25, 7.5], "W_TEXEL": [53.2, 4.3], "W_EUROPOORT": [52.0, 3.8], "W_SCHELDT": [51.42, 3.4], "W_DOVER": [51.05, 1.5], "W_USHANT": [48.5, -5.5], "W_FINISTERRE": [43.2, -9.8], "W_ST_VINCENT": [36.8, -9.2], "W_GIBRALTAR": [35.98, -5.5], "W_MED_W": [37.2, 3.0], "W_SICILY": [37.3, 11.5], "W_CRETE_S": [34.5, 24.5], "W_AEGEAN": [36.5, 25.8], "W_MED_E": [33.5, 30.5], "W_NORWAY_SW": [59.0, 4.8], "W_NORWAY_MID": [63.5, 6.5], "W_LOFOTEN": [68.0, 11.5], "W_NORTHCAPE": [71.3, 25.5]};
+    const SEA_EDGES = [["W_SPB_CH", "W_KRON"], ["W_KRON", "W_SESKAR"], ["W_KRON", "W_PRIMORSK_S"], ["W_PRIMORSK_S", "W_VYSOTSK_S"], ["W_PRIMORSK_S", "W_SESKAR"], ["W_VYSOTSK_S", "W_SOMMERS"], ["W_USTLUGA_N", "W_SESKAR"], ["W_USTLUGA_N", "W_SILLAMAE_N"], ["W_USTLUGA_N", "W_HOGLAND_S"], ["W_SESKAR", "W_SOMMERS"], ["W_SESKAR", "W_HOGLAND_S"], ["W_SILLAMAE_N", "W_HOGLAND_S"], ["W_SOMMERS", "W_HAMINA_S"], ["W_SOMMERS", "W_HOGLAND_N"], ["W_HAMINA_S", "W_KOTKA_S"], ["W_HAMINA_S", "W_HOGLAND_N"], ["W_KOTKA_S", "W_HOGLAND_N"], ["W_KOTKA_S", "W_ORRENGRUND"], ["W_HOGLAND_N", "W_ORRENGRUND"], ["W_HOGLAND_N", "W_HOGLAND_S"], ["W_HOGLAND_S", "W_KALBADA"], ["W_HOGLAND_S", "W_MUUGA_N"], ["W_ORRENGRUND", "W_LOVIISA_S"], ["W_ORRENGRUND", "W_KALBADA"], ["W_LOVIISA_S", "W_KALBADA"], ["W_KALBADA", "W_SKOLDVIK_S"], ["W_KALBADA", "W_VUOSAARI_S"], ["W_KALBADA", "W_HEL_LIGHT"], ["W_KALBADA", "W_MUUGA_N"], ["W_SKOLDVIK_S", "W_VUOSAARI_S"], ["W_VUOSAARI_S", "W_HARMAJA"], ["W_VUOSAARI_S", "W_HEL_LIGHT"], ["W_HARMAJA", "W_HEL_LIGHT"], ["W_HEL_LIGHT", "W_MUUGA_N"], ["W_HEL_LIGHT", "W_TALLINN_N"], ["W_HEL_LIGHT", "W_PORKKALA"], ["W_MUUGA_N", "W_TALLINN_N"], ["W_TALLINN_N", "W_TALLINN_BAY"], ["W_TALLINN_N", "W_NAISSAAR"], ["W_TALLINN_N", "W_PORKKALA"], ["W_TALLINN_BAY", "W_NAISSAAR"], ["W_PORKKALA", "W_NAISSAAR"], ["W_PORKKALA", "W_INKOO_S"], ["W_PORKKALA", "W_JUSSARO"], ["W_NAISSAAR", "W_PALDISKI_N"], ["W_INKOO_S", "W_JUSSARO"], ["W_PALDISKI_N", "W_JUSSARO"], ["W_PALDISKI_N", "W_OSMUSAAR"], ["W_JUSSARO", "W_OSMUSAAR"], ["W_JUSSARO", "W_RUSSARO"], ["W_OSMUSAAR", "W_RUSSARO"], ["W_OSMUSAAR", "W_BENGTSKAR"], ["W_OSMUSAAR", "W_HIIUMAA_N"], ["W_RUSSARO", "W_HANKO_W"], ["W_RUSSARO", "W_BENGTSKAR"], ["W_HANKO_W", "W_BENGTSKAR"], ["W_HANKO_W", "W_FORBY_W"], ["W_BENGTSKAR", "W_UTO"], ["W_BENGTSKAR", "W_HIIUMAA_N"], ["W_BENGTSKAR", "W_BOGSKAR"], ["W_HIIUMAA_N", "W_HIIUMAA_W"], ["W_HIIUMAA_N", "W_UTO"], ["W_HIIUMAA_N", "W_BOGSKAR"], ["W_HIIUMAA_W", "W_BALT_NC"], ["W_HIIUMAA_W", "W_IRBE"], ["W_FORBY_W", "W_SALO_S"], ["W_FORBY_W", "W_PARAINEN_S"], ["W_FORBY_W", "W_BENGTSKAR"], ["W_PARAINEN_S", "W_AIRISTO"], ["W_AIRISTO", "W_NAANTALI_S"], ["W_AIRISTO", "W_KORPO"], ["W_AIRISTO", "W_UTO"], ["W_KORPO", "W_UTO"], ["W_KORPO", "W_KOKAR"], ["W_KORPO", "W_SOTTUNGA"], ["W_KORPO", "W_KUSTAVI_W"], ["W_UTO", "W_KOKAR"], ["W_UTO", "W_BOGSKAR"], ["W_KOKAR", "W_SOTTUNGA"], ["W_KOKAR", "W_LEDSUND"], ["W_KOKAR", "W_BOGSKAR"], ["W_SOTTUNGA", "W_LANGNAS_E"], ["W_SOTTUNGA", "W_BOTH_SE"], ["W_LANGNAS_E", "W_LEDSUND"], ["W_LEDSUND", "W_MARIEHAMN_S"], ["W_LEDSUND", "W_NYHAMN"], ["W_LEDSUND", "W_FLOTJAN"], ["W_MARIEHAMN_S", "W_NYHAMN"], ["W_NYHAMN", "W_FLOTJAN"], ["W_NYHAMN", "W_ALAND_S"], ["W_FLOTJAN", "W_SODERARM"], ["W_FLOTJAN", "W_ALAND_S"], ["W_FLOTJAN", "W_BOGSKAR"], ["W_SODERARM", "W_KAPELL_E"], ["W_SODERARM", "W_FURUSUND"], ["W_SODERARM", "W_SANDHAMN"], ["W_SODERARM", "W_ALAND_S"], ["W_KAPELL_E", "W_FURUSUND"], ["W_FURUSUND", "W_VAXHOLM"], ["W_SANDHAMN", "W_VAXHOLM"], ["W_SANDHAMN", "W_LANDSORT"], ["W_SANDHAMN", "W_BOGSKAR"], ["W_ALAND_S", "W_GRISSLE_E"], ["W_ALAND_S", "W_MARKET"], ["W_ALAND_S", "W_ECKERO_W"], ["W_GRISSLE_E", "W_ECKERO_W"], ["W_GRISSLE_E", "W_MARKET"], ["W_ECKERO_W", "W_MARKET"], ["W_MARKET", "W_BOTH_SW"], ["W_MARKET", "W_BOTH_SE"], ["W_KUSTAVI_W", "W_BOTH_SE"], ["W_KUSTAVI_W", "W_UKI_W"], ["W_BOTH_SW", "W_BOTH_SE"], ["W_BOTH_SW", "W_GAVLE_E"], ["W_BOTH_SW", "W_NORRSUND_E"], ["W_BOTH_SW", "W_BOTH_MW"], ["W_BOTH_SE", "W_UKI_W"], ["W_BOTH_SE", "W_RAUMA_W"], ["W_BOTH_SE", "W_BOTH_MW"], ["W_BOTH_SE", "W_BOTH_ME"], ["W_UKI_W", "W_RAUMA_W"], ["W_RAUMA_W", "W_PORI_W"], ["W_RAUMA_W", "W_BOTH_MW"], ["W_PORI_W", "W_BOTH_ME"], ["W_PORI_W", "W_BOTH_MW"], ["W_GAVLE_E", "W_NORRSUND_E"], ["W_NORRSUND_E", "W_SANDARNE_E"], ["W_SANDARNE_E", "W_BOTH_MW"], ["W_SANDARNE_E", "W_SUNDSVALL_E"], ["W_BOTH_MW", "W_BOTH_ME"], ["W_BOTH_MW", "W_SUNDSVALL_E"], ["W_BOTH_MW", "W_KVARKEN_S"], ["W_SUNDSVALL_E", "W_KVARKEN_S"], ["W_BOTH_ME", "W_KRISTIINA_W"], ["W_BOTH_ME", "W_KASKINEN_W"], ["W_BOTH_ME", "W_KVARKEN_S"], ["W_KRISTIINA_W", "W_KASKINEN_W"], ["W_KASKINEN_W", "W_KVARKEN_S"], ["W_KVARKEN_S", "W_KVARKEN_M"], ["W_KVARKEN_M", "W_VAASA_W"], ["W_KVARKEN_M", "W_KVARKEN_N"], ["W_KVARKEN_M", "W_UMEA_E"], ["W_VAASA_W", "W_KVARKEN_N"], ["W_UMEA_E", "W_KVARKEN_N"], ["W_KVARKEN_N", "W_BAY_S"], ["W_BAY_S", "W_PIETAR_W"], ["W_BAY_S", "W_KOKKOLA_W"], ["W_BAY_S", "W_PITEA_E"], ["W_BAY_S", "W_RAAHE_W"], ["W_PIETAR_W", "W_KOKKOLA_W"], ["W_KOKKOLA_W", "W_RAAHE_W"], ["W_KOKKOLA_W", "W_PITEA_E"], ["W_RAAHE_W", "W_OULU_W"], ["W_RAAHE_W", "W_LULEA_E"], ["W_RAAHE_W", "W_PITEA_E"], ["W_PITEA_E", "W_LULEA_E"], ["W_LULEA_E", "W_OULU_W"], ["W_LULEA_E", "W_KEMI_S"], ["W_OULU_W", "W_OULU_CH"], ["W_OULU_W", "W_KEMI_S"], ["W_BOGSKAR", "W_BALT_NC"], ["W_BOGSKAR", "W_GOTSKA"], ["W_BOGSKAR", "W_LANDSORT"], ["W_BALT_NC", "W_GOTSKA"], ["W_BALT_NC", "W_GOTLAND_E"], ["W_BALT_NC", "W_IRBE"], ["W_BALT_NC", "W_VENTSPILS_W"], ["W_GOTSKA", "W_LANDSORT"], ["W_GOTSKA", "W_GOTLAND_W"], ["W_GOTSKA", "W_GOTLAND_E"], ["W_LANDSORT", "W_OXELO_E"], ["W_LANDSORT", "W_GOTLAND_W"], ["W_OXELO_E", "W_GOTLAND_W"], ["W_GOTLAND_W", "W_OLAND_S"], ["W_GOTLAND_W", "W_HOBURGEN"], ["W_GOTLAND_E", "W_IRBE"], ["W_GOTLAND_E", "W_VENTSPILS_W"], ["W_GOTLAND_E", "W_LIEPAJA_W"], ["W_GOTLAND_E", "W_HOBURGEN"], ["W_IRBE", "W_ROOMA_S"], ["W_IRBE", "W_RIGA_GULF"], ["W_IRBE", "W_VENTSPILS_W"], ["W_ROOMA_S", "W_RIGA_GULF"], ["W_RIGA_GULF", "W_PARNU_W"], ["W_VENTSPILS_W", "W_LIEPAJA_W"], ["W_VENTSPILS_W", "W_HOBURGEN"], ["W_LIEPAJA_W", "W_KLAIPEDA_W"], ["W_LIEPAJA_W", "W_HOBURGEN"], ["W_KLAIPEDA_W", "W_KALIN_W"], ["W_KLAIPEDA_W", "W_GDANSK_N"], ["W_KLAIPEDA_W", "W_HOBURGEN"], ["W_KALIN_W", "W_GDANSK_N"], ["W_GDANSK_N", "W_HOBURGEN"], ["W_GDANSK_N", "W_BORNHOLM_S"], ["W_GDANSK_N", "W_BORNHOLM_N"], ["W_HOBURGEN", "W_OLAND_S"], ["W_HOBURGEN", "W_BORNHOLM_N"], ["W_HOBURGEN", "W_BORNHOLM_S"], ["W_OLAND_S", "W_BORNHOLM_N"], ["W_BORNHOLM_N", "W_BORNHOLM_S"], ["W_BORNHOLM_N", "W_FALSTERBO"], ["W_BORNHOLM_N", "W_ARKONA"], ["W_BORNHOLM_S", "W_SWINO_N"], ["W_BORNHOLM_S", "W_ARKONA"], ["W_SWINO_N", "W_ARKONA"], ["W_ARKONA", "W_FALSTERBO"], ["W_ARKONA", "W_DARSS"], ["W_DARSS", "W_FALSTERBO"], ["W_DARSS", "W_ROSTOCK_N"], ["W_DARSS", "W_FEHMARN"], ["W_ROSTOCK_N", "W_FEHMARN"], ["W_FEHMARN", "W_LUBECK_BAY"], ["W_FEHMARN", "W_KIEL_BIGHT"], ["W_KIEL_BIGHT", "W_KIEL_WEST"], ["W_KIEL_WEST", "W_ELBE_OUT"], ["W_FALSTERBO", "W_SOUND"], ["W_SOUND", "W_KATTEGAT"], ["W_KATTEGAT", "W_GOTEBORG_W"], ["W_KATTEGAT", "W_SKAGEN"], ["W_GOTEBORG_W", "W_SKAGEN"], ["W_SKAGEN", "W_SKAGERRAK"], ["W_SKAGERRAK", "W_ELBE_OUT"], ["W_SKAGERRAK", "W_HELGOLAND"], ["W_SKAGERRAK", "W_TEXEL"], ["W_SKAGERRAK", "W_NORWAY_SW"], ["W_ELBE_OUT", "W_HELGOLAND"], ["W_HELGOLAND", "W_TEXEL"], ["W_TEXEL", "W_EUROPOORT"], ["W_EUROPOORT", "W_SCHELDT"], ["W_SCHELDT", "W_DOVER"], ["W_DOVER", "W_USHANT"], ["W_USHANT", "W_FINISTERRE"], ["W_FINISTERRE", "W_ST_VINCENT"], ["W_ST_VINCENT", "W_GIBRALTAR"], ["W_GIBRALTAR", "W_MED_W"], ["W_MED_W", "W_SICILY"], ["W_SICILY", "W_CRETE_S"], ["W_CRETE_S", "W_AEGEAN"], ["W_CRETE_S", "W_MED_E"], ["W_NORWAY_SW", "W_NORWAY_MID"], ["W_NORWAY_MID", "W_LOFOTEN"], ["W_LOFOTEN", "W_NORTHCAPE"]];
+    const PORT_APPROACHES = {"FIHEL": "W_HARMAJA", "FIVSS": "W_VUOSAARI_S", "FIHKO": "W_RUSSARO", "FITKU": "W_AIRISTO", "FINLI": "W_NAANTALI_S", "FIMHQ": "W_MARIEHAMN_S", "FILAN": "W_LANGNAS_E", "FIECK": "W_ECKERO_W", "FIKTK": "W_KOTKA_S", "FIHMN": "W_HAMINA_S", "FIINK": "W_INKOO_S", "FIVKO": "W_LOVIISA_S", "FIRAU": "W_RAUMA_W", "FIPOR": "W_PORI_W", "FIVAA": "W_VAASA_W", "FIKOK": "W_KOKKOLA_W", "FIPRS": "W_PIETAR_W", "FIRAA": "W_RAAHE_W", "FIOUL": "W_OULU_CH", "FIKEM": "W_KEMI_S", "FITOR": "W_KEMI_S", "FIKAS": "W_KASKINEN_W", "FIUKI": "W_UKI_W", "FIPAR": "W_PARAINEN_S", "FIFOR": "W_FORBY_W", "FISKV": "W_SKOLDVIK_S", "FIKRS": "W_KRISTIINA_W", "FISAL": "W_SALO_S", "FITEI": "W_SALO_S", "FIKUS": "W_KUSTAVI_W", "EETLL": "W_TALLINN_BAY", "EEVAN": "W_TALLINN_BAY", "EEMUG": "W_MUUGA_N", "EEPLS": "W_PALDISKI_N", "EESLM": "W_SILLAMAE_N", "EERMS": "W_ROOMA_S", "EEPRN": "W_PARNU_W", "SESTO": "W_VAXHOLM", "SEKAP": "W_KAPELL_E", "SEKPS": "W_KAPELL_E", "SEGRH": "W_GRISSLE_E", "SEGOT": "W_GOTEBORG_W", "SEPIT": "W_PITEA_E", "SENOT": "W_NORRSUND_E", "SESSR": "W_SANDARNE_E", "SEGVX": "W_GAVLE_E", "SELUL": "W_LULEA_E", "SEUME": "W_UMEA_E", "SESDL": "W_SUNDSVALL_E", "SENYN": "W_LANDSORT", "SEOXE": "W_OXELO_E", "SENRK": "W_OXELO_E", "RUULU": "W_USTLUGA_N", "RULED": "W_SPB_CH", "RUPRI": "W_PRIMORSK_S", "RUVYS": "W_VYSOTSK_S", "RUKGD": "W_KALIN_W", "RUKLD": "W_KALIN_W", "RUMMK": "W_NORTHCAPE", "DETRV": "W_LUBECK_BAY", "DERSK": "W_ROSTOCK_N", "DEKEL": "W_KIEL_BIGHT", "DELBC": "W_LUBECK_BAY", "DEBRB": "W_KIEL_WEST", "DEWVN": "W_ELBE_OUT", "DEHAM": "W_ELBE_OUT", "DEBRV": "W_ELBE_OUT", "PLGDY": "W_GDANSK_N", "PLGDN": "W_GDANSK_N", "PLSWI": "W_SWINO_N", "PLSZZ": "W_SWINO_N", "LVRIX": "W_RIGA_GULF", "LVVNT": "W_VENTSPILS_W", "LVLPX": "W_LIEPAJA_W", "LTKLJ": "W_KLAIPEDA_W", "NLRTM": "W_EUROPOORT", "NLAMS": "W_TEXEL", "NLVLI": "W_SCHELDT", "NLMOE": "W_EUROPOORT", "BEANR": "W_SCHELDT", "BEZEE": "W_SCHELDT", "TRISK": "W_MED_E", "TRALI": "W_AEGEAN", "EGPSD": "W_MED_E", "EGSUZ": "W_MED_E", "ELDAB": "W_MED_E", "GIGIB": "W_GIBRALTAR", "NOGLO": "W_LOFOTEN", "NOMON": "W_NORWAY_SW", "PACTB": "W_GIBRALTAR"};
+    const SEA_ADJ = {};
+    Object.keys(SEA_NODES).forEach(k => { SEA_ADJ[k] = []; });
+    SEA_EDGES.forEach(([u, v]) => {
+      const w = haversineKm(SEA_NODES[u][0], SEA_NODES[u][1], SEA_NODES[v][0], SEA_NODES[v][1]);
+      SEA_ADJ[u].push([v, w]);
+      SEA_ADJ[v].push([u, w]);
+    });
+    const seaPathCache = new Map();
+
+    function findSeaNodePath(start, end) {
+      if (start === end) return { path: [start], dist: 0 };
+      const key = start + "|" + end;
+      if (seaPathCache.has(key)) return seaPathCache.get(key);
+      const dist = { [start]: 0 }, prev = {}, done = new Set();
+      while (true) {
+        let u = null, best = Infinity;
+        for (const k in dist) {
+          if (!done.has(k) && dist[k] < best) { best = dist[k]; u = k; }
+        }
+        if (u === null || u === end) break;
+        done.add(u);
+        for (const [v, w] of SEA_ADJ[u]) {
+          const nd = best + w;
+          if (nd < (dist[v] ?? Infinity)) { dist[v] = nd; prev[v] = u; }
+        }
+      }
+      let result;
+      if (dist[end] === undefined) {
+        result = { path: [start, end], dist: haversineKm(...SEA_NODES[start], ...SEA_NODES[end]) };
+      } else {
+        const p = [];
+        let cur = end;
+        while (cur) { p.push(cur); cur = prev[cur]; }
+        result = { path: p.reverse(), dist: dist[end] };
+      }
+      seaPathCache.set(key, result);
+      return result;
+    }
+
+    function nearestSeaNodes(lat, lon, n) {
+      return Object.keys(SEA_NODES)
+        .map(k => [k, haversineKm(lat, lon, SEA_NODES[k][0], SEA_NODES[k][1])])
+        .sort((a, b) => a[1] - b[1])
+        .slice(0, n)
+        .map(x => x[0]);
+    }
+
+    function portApproachNode(port) {
+      return PORT_APPROACHES[port.code] || nearestSeaNodes(port.lat, port.lon, 1)[0];
+    }
+
+    function offsetLatLon(lat, lon, km, brg) {
+      const b = (brg * Math.PI) / 180;
+      const dLat = (km / 111.32) * Math.cos(b);
+      const dLon = (km / (111.32 * Math.max(0.2, Math.cos((lat * Math.PI) / 180)))) * Math.sin(b);
+      return [lat + dLat, lon + dLon];
+    }
+
+    function chaikinSmooth(pts, iterations = 2) {
+      let res = pts;
+      if (res.length <= 2) return res;
+      for (let it = 0; it < iterations; it++) {
+        const out = [res[0]];
+        for (let i = 0; i < res.length - 1; i++) {
+          const p0 = res[i], p1 = res[i + 1];
+          out.push([0.75 * p0[0] + 0.25 * p1[0], 0.75 * p0[1] + 0.25 * p1[1]]);
+          out.push([0.25 * p0[0] + 0.75 * p1[0], 0.25 * p0[1] + 0.75 * p1[1]]);
+        }
+        out.push(res[res.length - 1]);
+        res = out;
+      }
+      return res;
+    }
+
+    // Realistic curved fairway path between a harbour and a vessel position (mirrors marine_tracker.py)
+    function buildFairwayRoute(port, shipLat, shipLon, course, isOrigin) {
+      const pLat = port.lat, pLon = port.lon;
+      const directKm = haversineKm(pLat, pLon, shipLat, shipLon);
+      if (directKm < 0.8) return isOrigin ? [[pLat, pLon], [shipLat, shipLon]] : [[shipLat, shipLon], [pLat, pLon]];
+
+      const appNode = portApproachNode(port);
+      const [appLat, appLon] = SEA_NODES[appNode];
+      let bestSeq = [appNode], bestTotal = Infinity;
+      for (const c of nearestSeaNodes(shipLat, shipLon, 3)) {
+        const r = findSeaNodePath(appNode, c);
+        const tot = haversineKm(pLat, pLon, appLat, appLon) + r.dist + haversineKm(shipLat, shipLon, ...SEA_NODES[c]);
+        if (tot < bestTotal) { bestTotal = tot; bestSeq = r.path; }
+      }
+
+      const coords = [[pLat, pLon], ...bestSeq.map(k => [SEA_NODES[k][0], SEA_NODES[k][1]])];
+      // Drop trailing fairway nodes that overshoot the ship and backtrack
+      while (coords.length >= 2) {
+        const prevPt = coords[coords.length - 2], lastPt = coords[coords.length - 1];
+        const turn = angleDiffDeg(
+          bearingDeg(prevPt[0], prevPt[1], lastPt[0], lastPt[1]),
+          bearingDeg(lastPt[0], lastPt[1], shipLat, shipLon)
+        );
+        if (haversineKm(prevPt[0], prevPt[1], shipLat, shipLon) < haversineKm(prevPt[0], prevPt[1], lastPt[0], lastPt[1]) || turn > 95) {
+          coords.pop();
+        } else break;
+      }
+      if (coords.length === 1) {
+        const chDist = Math.min(directKm * 0.38, haversineKm(pLat, pLon, appLat, appLon) * 0.65);
+        if (chDist > 0.35) coords.push(offsetLatLon(pLat, pLon, chDist, bearingDeg(pLat, pLon, appLat, appLon)));
+      }
+      const lastW = coords[coords.length - 1];
+      const legKm = haversineKm(lastW[0], lastW[1], shipLat, shipLon);
+      if (course !== null && course !== undefined && legKm > 1.2) {
+        const alignBrg = isOrigin ? (course + 180) % 360 : course;
+        const ctrl = offsetLatLon(shipLat, shipLon, Math.min(legKm * 0.35, 10), alignBrg);
+        if (haversineKm(lastW[0], lastW[1], ctrl[0], ctrl[1]) < legKm * 1.15) coords.push(ctrl);
+      } else if (legKm > 2.0 && coords.length < 3) {
+        const brg = bearingDeg(lastW[0], lastW[1], shipLat, shipLon);
+        coords.push(offsetLatLon((lastW[0] + shipLat) / 2, (lastW[1] + shipLon) / 2, Math.min(legKm * 0.14, 3.5), (brg + 90) % 360));
+      }
+      coords.push([shipLat, shipLon]);
+      if (!isOrigin) coords.reverse();
+      return chaikinSmooth(coords, 2);
+    }
+
+    Object.values(MARINE_CUSTOM_PORTS).forEach(p => {
+      appState.marinePortsByName[p.name.toUpperCase()] = p;
+      const base = p.name.replace(/\s*\(.*?\)/g, "").trim().toUpperCase();
+      if (base) appState.marinePortsByName[base] = p;
+    });
+    Object.entries(MARINE_NAME_ALIASES).forEach(([alias, code]) => {
+      if (MARINE_CUSTOM_PORTS[code]) appState.marinePortsByName[alias] = MARINE_CUSTOM_PORTS[code];
+    });
+
+    function haversineKm(lat1, lon1, lat2, lon2) {
+      const toRad = d => (d * Math.PI) / 180;
+      const dLat = toRad(lat2 - lat1);
+      const dLon = toRad(lon2 - lon1);
+      const a = Math.sin(dLat / 2) ** 2 + Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLon / 2) ** 2;
+      return 12742 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+    }
+
+    function bearingDeg(lat1, lon1, lat2, lon2) {
+      const toRad = d => (d * Math.PI) / 180;
+      const toDeg = r => (r * 180) / Math.PI;
+      const p1 = toRad(lat1), p2 = toRad(lat2), dl = toRad(lon2 - lon1);
+      const y = Math.sin(dl) * Math.cos(p2);
+      const x = Math.cos(p1) * Math.sin(p2) - Math.sin(p1) * Math.cos(p2) * Math.cos(dl);
+      return (toDeg(Math.atan2(y, x)) + 360) % 360;
+    }
+
+    function angleDiffDeg(a, b) {
+      const d = Math.abs(a - b) % 360;
+      return d > 180 ? 360 - d : d;
+    }
+
+    function decodeAisEta(rawEta) {
+      if (!rawEta || typeof rawEta !== "number") return null;
+      const month = (rawEta >> 16) & 0x0f;
+      const day = (rawEta >> 11) & 0x1f;
+      const hour = (rawEta >> 6) & 0x1f;
+      const minute = rawEta & 0x3f;
+      if (month < 1 || month > 12 || day < 1 || day > 31) return null;
+      const h = hour >= 24 ? 0 : hour;
+      const m = minute >= 60 ? 0 : minute;
+      const pad = n => String(n).padStart(2, "0");
+      // AIS ETA has no year: pick the candidate year closest to now, then only trust -36 h .. +45 days
+      const nowMs = Date.now();
+      const curYear = new Date().getUTCFullYear();
+      let bestMs = null;
+      for (const y of [curYear - 1, curYear, curYear + 1]) {
+        const t = Date.UTC(y, month - 1, day, h, m);
+        if (bestMs === null || Math.abs(t - nowMs) < Math.abs(bestMs - nowMs)) bestMs = t;
+      }
+      const deltaMs = bestMs - nowMs;
+      if (deltaMs < -36 * 3600000 || deltaMs > 45 * 86400000) return null;
+      return `${pad(month)}-${pad(day)} ${pad(h)}:${pad(m)} UTC`;
+    }
+
+    function resolveMarinePort(token) {
+      if (!token) return null;
+      let t = String(token).trim().toUpperCase();
+      t = t.replace(/\s+VIA\s+.*$/, "").replace(/\(.*?\)/g, "").replace(/\bANCH.*$/, "").replace(/\bAREA.*$/, "").replace(/^[><=\-_.,:\s]+|[><=\-_.,:\s]+$/g, "");
+      if (!t || ["N/A", "UNKNOWN", "FOR ORDERS", "FOR ORDER", "TO ORDER", "TBA"].includes(t)) return null;
+      if (MARINE_NAME_ALIASES[t]) return appState.marinePortsByCode[MARINE_NAME_ALIASES[t]];
+      if (appState.marinePortsByCode[t]) return appState.marinePortsByCode[t];
+      const compact = t.replace(/[\s\-_]/g, "");
+      if (compact.length === 5 && appState.marinePortsByCode[compact]) return appState.marinePortsByCode[compact];
+      if (MARINE_NAME_ALIASES[compact]) return appState.marinePortsByCode[MARINE_NAME_ALIASES[compact]];
+      if (appState.marinePortsByName[t]) return appState.marinePortsByName[t];
+      for (const [alias, code] of Object.entries(MARINE_NAME_ALIASES)) {
+        if (alias.length >= 4 && t.includes(alias)) return appState.marinePortsByCode[code];
+      }
+      return null;
+    }
+
+    function parseAisDestString(rawDest) {
+      if (!rawDest) return [null, null];
+      const cleaned = String(rawDest).trim().toUpperCase();
+      if ([">", "<", "/", "->"].some(sep => cleaned.includes(sep))) {
+        const parts = cleaned.split(/[<>=/]+|->/).map(s => s.trim()).filter(Boolean);
+        const resolved = parts.map(resolveMarinePort).filter(Boolean);
+        if (resolved.length >= 2) return [resolved[0], resolved[resolved.length - 1]];
+        if (resolved.length === 1) return [null, resolved[0]];
+      }
+      const m = cleaned.match(/^([A-Z]{2}\s?[A-Z]{3})\s*-\s*([A-Z]{2}\s?[A-Z]{3})$/);
+      if (m) return [resolveMarinePort(m[1]), resolveMarinePort(m[2])];
+      return [null, resolveMarinePort(cleaned)];
+    }
+
+    function inferHarbourFromPos(lat, lon, course, excludeCode, reverse = true) {
+      let bestPort = null;
+      let bestScore = Infinity;
+      const targetBearing = (course !== null && course !== undefined && !isNaN(course))
+        ? (reverse ? (course + 180) % 360 : course)
+        : null;
+      for (const code of BALTIC_HUB_CODES) {
+        if (code === excludeCode) continue;
+        const p = appState.marinePortsByCode[code];
+        if (!p) continue;
+        const dist = haversineKm(lat, lon, p.lat, p.lon);
+        if (dist < 8.0 && reverse) return p;
+        let score = dist;
+        if (targetBearing !== null && dist > 5.0) {
+          const b = bearingDeg(lat, lon, p.lat, p.lon);
+          const diff = angleDiffDeg(targetBearing, b);
+          score = dist * (1.0 + Math.pow(diff / 90.0, 1.5));
+        }
+        if (score < bestScore) {
+          bestScore = score;
+          bestPort = p;
+        }
+      }
+      return bestPort || MARINE_CUSTOM_PORTS["FIHEL"];
+    }
+
     async function fetchMarineMetadata() {
       try {
-        const res = await fetch("https://meri.digitraffic.fi/api/ais/v1/vessels");
-        if (!res.ok) return;
-        const vessels = await res.json();
-        const meta = {};
-        vessels.forEach(v => {
-          const mmsi = String(v.mmsi);
-          if (!mmsi) return;
-          const code = v.shipType || 0;
-          let cat = "Other";
-          if ((code >= 70 && code <= 89)) cat = "Cargo";
-          else if ((code >= 60 && code <= 69) || code === 40 || code === 50) cat = "Commercial";
-          else if (code === 36 || code === 37) cat = "Private";
+        const [vesselsRes, winterRes, pcRes, portsRes] = await Promise.allSettled([
+          fetch("https://meri.digitraffic.fi/api/ais/v1/vessels"),
+          fetch("https://meri.digitraffic.fi/api/winter-navigation/v2/locations"),
+          fetch("https://meri.digitraffic.fi/api/port-call/v1/port-calls"),
+          fetch("https://meri.digitraffic.fi/api/port-call/v1/ports")
+        ]);
 
-          meta[mmsi] = {
-            name: (v.name || "Unknown Vessel").trim(),
-            shipType: v.shipTypeEn || `Type ${code}`,
-            category: cat,
-            callSign: v.callSign || "N/A",
-            destination: v.destination || "Unknown"
-          };
-        });
-        appState.marineMetadata = meta;
+        if (portsRes.status === "fulfilled" && portsRes.value.ok) {
+          const pData = await portsRes.value.json();
+          const ssn = pData.ssnLocations?.features || [];
+          ssn.forEach(f => {
+            const coords = f.geometry?.coordinates;
+            if (coords && coords.length >= 2) {
+              const code = (f.properties?.locode || "").toUpperCase();
+              const name = (f.properties?.locationName || "").trim();
+              if (code && !MARINE_CUSTOM_PORTS[code]) {
+                appState.marinePortsByCode[code] = { code, name: name || code, lat: coords[1], lon: coords[0] };
+              }
+              if (name) {
+                const entry = appState.marinePortsByCode[code] || { code, name, lat: coords[1], lon: coords[0] };
+                if (!appState.marinePortsByName[name.toUpperCase()]) appState.marinePortsByName[name.toUpperCase()] = entry;
+              }
+            }
+          });
+        }
+
+        if (winterRes.status === "fulfilled" && winterRes.value.ok) {
+          const wData = await winterRes.value.json();
+          (wData.features || []).forEach(f => {
+            const coords = f.geometry?.coordinates;
+            if (coords && coords.length >= 2) {
+              const code = (f.properties?.locodeList || "").toUpperCase();
+              const rawName = (f.properties?.name || "").trim();
+              const name = rawName ? rawName.charAt(0).toUpperCase() + rawName.slice(1).toLowerCase() : code;
+              if (code && !appState.marinePortsByCode[code]) {
+                appState.marinePortsByCode[code] = { code, name, lat: coords[1], lon: coords[0] };
+              }
+              if (name && !appState.marinePortsByName[name.toUpperCase()]) {
+                appState.marinePortsByName[name.toUpperCase()] = appState.marinePortsByCode[code] || { code, name, lat: coords[1], lon: coords[0] };
+              }
+            }
+          });
+        }
+
+        if (pcRes.status === "fulfilled" && pcRes.value.ok) {
+          const pcData = await pcRes.value.json();
+          const pcs = pcData.portCalls || [];
+          const pcMap = {};
+          pcs.forEach(pc => {
+            const mmsi = String(pc.mmsi || "");
+            if (!mmsi) return;
+            const d0 = (pc.portAreaDetails && pc.portAreaDetails[0]) || {};
+            pcMap[mmsi] = {
+              portToVisit: (pc.portToVisit || "").trim().toUpperCase(),
+              prevPort: (pc.prevPort || "").trim().toUpperCase(),
+              nextPort: (pc.nextPort || "").trim().toUpperCase(),
+              eta: d0.eta,
+              ata: d0.ata,
+              atd: d0.atd
+            };
+          });
+          appState.marinePortCalls = pcMap;
+        }
+
+        if (vesselsRes.status === "fulfilled" && vesselsRes.value.ok) {
+          const vessels = await vesselsRes.value.json();
+          const meta = {};
+          vessels.forEach(v => {
+            const mmsi = String(v.mmsi);
+            if (!mmsi) return;
+            const code = v.shipType || 0;
+            let cat = "Other";
+            if (code >= 70 && code <= 89) cat = "Cargo";
+            else if ((code >= 60 && code <= 69) || code === 40 || code === 50) cat = "Commercial";
+            else if (code === 36 || code === 37) cat = "Private";
+
+            meta[mmsi] = {
+              name: (v.name || "Unknown Vessel").trim() || "Unknown Vessel",
+              shipType: v.shipTypeEn || (code >= 70 && code <= 79 ? "Cargo" : code >= 80 && code <= 89 ? "Tanker" : code >= 60 && code <= 69 ? "Passenger" : `Type ${code}`),
+              category: cat,
+              callSign: (v.callSign || "N/A").trim(),
+              destination: (v.destination || "").trim(),
+              etaRaw: v.eta || 0
+            };
+          });
+          appState.marineMetadata = meta;
+        }
       } catch (err) {
         console.warn("Marine metadata notice:", err);
       }
+    }
+
+    function enrichVesselRouteAndEta(mmsi, lat, lon, sog, course, meta) {
+      const rawDest = (meta.destination || "").trim();
+      const pc = appState.marinePortCalls[mmsi];
+      let originPort = null;
+      let destPort = null;
+      let etaStr = null;
+
+      if (pc) {
+        const prevP = resolveMarinePort(pc.prevPort);
+        const visitP = resolveMarinePort(pc.portToVisit);
+        const nextP = resolveMarinePort(pc.nextPort);
+        if (pc.atd) {
+          originPort = visitP || prevP;
+          destPort = nextP;
+        } else {
+          originPort = prevP;
+          destPort = visitP;
+          if (pc.eta) {
+            try {
+              const d = new Date(pc.eta);
+              if (!isNaN(d)) {
+                etaStr = d.toISOString().slice(5, 16).replace("T", " ") + " UTC";
+              }
+            } catch (e) {}
+          }
+        }
+      }
+
+      let [aisOrig, aisDest] = parseAisDestString(rawDest);
+      if (aisOrig && aisDest && course !== null) {
+        const bDest = bearingDeg(lat, lon, aisDest.lat, aisDest.lon);
+        const bOrig = bearingDeg(lat, lon, aisOrig.lat, aisOrig.lon);
+        if (angleDiffDeg(course, bOrig) + 15 < angleDiffDeg(course, bDest)) {
+          const tmp = aisOrig; aisOrig = aisDest; aisDest = tmp;
+        }
+      }
+      if (!originPort && aisOrig) originPort = aisOrig;
+      if (!destPort && aisDest) destPort = aisDest;
+
+      if (!destPort) {
+        destPort = inferHarbourFromPos(lat, lon, course, originPort ? originPort.code : null, false);
+      }
+      if (!originPort || (destPort && originPort.code === destPort.code)) {
+        if (appState.marineOrigins[mmsi] && appState.marineOrigins[mmsi].code !== destPort.code) {
+          originPort = appState.marineOrigins[mmsi];
+        } else {
+          const trail = appState.marineTrails[mmsi] || [[lat, lon]];
+          const startPt = trail[0];
+          originPort = inferHarbourFromPos(startPt[0], startPt[1], course, destPort ? destPort.code : null, true);
+          appState.marineOrigins[mmsi] = originPort;
+        }
+      }
+
+      if (!etaStr) {
+        etaStr = decodeAisEta(meta.etaRaw);
+      }
+      if (!etaStr && destPort) {
+        const distKm = haversineKm(lat, lon, destPort.lat, destPort.lon);
+        const speedKmh = (sog || 0) * 1.852;
+        if (distKm < 3.0 || speedKmh < 1.0) {
+          etaStr = distKm < 5.0 ? "Arrived / At Port" : "Stationary";
+        } else {
+          const hours = distKm / speedKmh;
+          if (hours < 240) {
+            const arr = new Date(Date.now() + hours * 3600000);
+            etaStr = "Est. " + arr.toISOString().slice(5, 16).replace("T", " ") + " UTC";
+          } else {
+            etaStr = "N/A";
+          }
+        }
+      }
+
+      return { originPort, destPort, etaStr: etaStr || "N/A" };
     }
 
     async function fetchMarineLocations() {
@@ -1519,10 +2156,39 @@
         const features = json.features || [];
 
         const enriched = features.map(feat => {
-          const mmsi = String(feat.properties?.mmsi);
+          const props = feat.properties || {};
+          const mmsi = String(props.mmsi);
+          const lat = feat.geometry?.coordinates?.[1];
+          const lon = feat.geometry?.coordinates?.[0];
+          if (!lat || !lon) return null;
+
           const meta = appState.marineMetadata[mmsi] || {};
-          const sog = feat.properties?.sog || 0; // knots
+          const sog = props.sog || 0; // knots
           const speedKmh = Math.round(sog * 1.852);
+          const rawHeading = props.heading;
+          const cog = props.cog;
+          let heading = "N/A";
+          if (rawHeading !== undefined && rawHeading !== null && rawHeading !== 511 && rawHeading >= 0 && rawHeading <= 360) {
+            heading = rawHeading;
+          } else if (cog !== undefined && cog !== null && cog >= 0 && cog <= 360) {
+            heading = Math.round(cog);
+          }
+          const course = typeof heading === "number" ? heading : null;
+
+          // Record vessel position trail as it moves
+          if (!appState.marineTrails[mmsi]) {
+            appState.marineTrails[mmsi] = [[lat, lon]];
+          } else {
+            const t = appState.marineTrails[mmsi];
+            const last = t[t.length - 1];
+            if (!last || Math.abs(last[0] - lat) > 0.00012 || Math.abs(last[1] - lon) > 0.00012) {
+              t.push([lat, lon]);
+              if (t.length > 150) t.shift();
+            }
+          }
+
+          const { originPort, destPort, etaStr } = enrichVesselRouteAndEta(mmsi, lat, lon, sog, course, meta);
+          const routePath = [[originPort.lat, originPort.lon], ...appState.marineTrails[mmsi]];
 
           return {
             id: 'marine-' + mmsi,
@@ -1532,14 +2198,35 @@
             shipType: meta.shipType || "Vessel",
             category: meta.category || "Other",
             speed: speedKmh,
-            heading: feat.properties?.heading ?? 'N/A',
+            sog: sog,
+            heading: heading,
             callSign: meta.callSign || "N/A",
-            destination: meta.destination || "N/A",
-            timestamp: feat.properties?.timestampExternal || "",
-            lat: feat.geometry?.coordinates?.[1],
-            lon: feat.geometry?.coordinates?.[0]
+            origin: originPort.name,
+            originCode: originPort.code,
+            originLat: originPort.lat,
+            originLon: originPort.lon,
+            destination: destPort.name,
+            destCode: destPort.code,
+            destLat: destPort.lat,
+            destLon: destPort.lon,
+            eta: etaStr,
+            routePath: routePath,
+            timestamp: props.timestampExternal || "",
+            lat: lat,
+            lon: lon
           };
-        }).filter(v => v.lat && v.lon);
+        }).filter(Boolean);
+
+        // Sort so named moving ships appear first in the live list
+        enriched.sort((a, b) => {
+          const aUnk = a.name === "Unknown Vessel" ? 1 : 0;
+          const bUnk = b.name === "Unknown Vessel" ? 1 : 0;
+          if (aUnk !== bUnk) return aUnk - bUnk;
+          const aMov = a.speed > 1 ? 0 : 1;
+          const bMov = b.speed > 1 ? 0 : 1;
+          if (aMov !== bMov) return aMov - bMov;
+          return b.speed - a.speed;
+        });
 
         appState.marineVessels = enriched;
         updateMarineMarkers(enriched);
@@ -1554,47 +2241,149 @@
       }
     }
 
+    function updateMarineRouteCard(v) {
+      const card = document.getElementById("marine-route-card");
+      if (!card) return;
+      if (!v) {
+        card.classList.remove("active");
+        return;
+      }
+      card.classList.add("active");
+      document.getElementById("mrc-name").textContent = `🚢 ${v.name}`;
+      document.getElementById("mrc-sub").textContent = `${v.shipType} • MMSI: ${v.mmsi} • Call: ${v.callSign}`;
+      document.getElementById("mrc-origin").textContent = v.origin || "Unknown";
+      document.getElementById("mrc-dest").textContent = v.destination || "Unknown";
+      document.getElementById("mrc-eta").textContent = v.eta || "N/A";
+      const hdg = v.heading !== "N/A" ? `${v.heading}°` : "N/A";
+      document.getElementById("mrc-kinematics").textContent = `${v.speed} km/h • ${hdg}`;
+    }
+
+    function drawMarineRoute(v) {
+      const routeLayer = layerGroups.routeLayer;
+      if (!routeLayer) return;
+      routeLayer.clearLayers();
+      if (!v) {
+        updateMarineRouteCard(null);
+        return;
+      }
+
+      updateMarineRouteCard(v);
+
+      const course = typeof v.heading === "number" ? v.heading : null;
+      const trail = appState.marineTrails[v.mmsi] || [[v.lat, v.lon]];
+      const originPort = { code: v.originCode, lat: v.originLat, lon: v.originLon };
+      const destPort = { code: v.destCode, lat: v.destLat, lon: v.destLon };
+      // Departure harbour -> sea lanes -> first observed position -> live AIS trail -> ship
+      const path = buildFairwayRoute(originPort, trail[0][0], trail[0][1], course, true).concat(trail.slice(1));
+      // Ship -> sea lanes -> destination harbour
+      const destPath = buildFairwayRoute(destPort, v.lat, v.lon, course, false);
+
+      // 1. Travelled Route Line: Departure Harbour -> Ship's recorded trail -> Current Ship Position
+      const glowLine = L.polyline(path, {
+        color: "#00f2ff",
+        weight: 8,
+        opacity: 0.25,
+        lineCap: "round",
+        lineJoin: "round",
+        className: "route-line"
+      });
+      const mainLine = L.polyline(path, {
+        color: "#00f2ff",
+        weight: 3.5,
+        opacity: 0.95,
+        lineCap: "round",
+        lineJoin: "round",
+        className: "route-line"
+      });
+      routeLayer.addLayer(glowLine);
+      routeLayer.addLayer(mainLine);
+
+
+      // 2. Remaining Projected Course Line: Ship -> Destination Harbour
+      if (v.destLat !== undefined && v.destLon !== undefined) {
+        routeLayer.addLayer(L.polyline(destPath, {
+          color: "#ffae00",
+          weight: 2,
+          opacity: 0.6,
+          dashArray: "6, 8",
+          interactive: false,
+          className: "route-line"
+        }));
+      }
+
+      // Labels go to opposite horizontal sides so they never cover the harbour, the ship or each other
+      const origIsWest = (v.originLon || 0) <= (v.destLon || 0);
+
+      // 3. Departure Harbour ring (hollow & non-interactive)
+      if (v.originLat !== undefined && v.originLon !== undefined) {
+        const origIcon = L.divIcon({
+          className: "",
+          html: `<div class="harbour-orig-ring"></div>`,
+          iconSize: [24, 24],
+          iconAnchor: [12, 12]
+        });
+        const origMarker = L.marker([v.originLat, v.originLon], { icon: origIcon, interactive: false, keyboard: false });
+        origMarker.bindTooltip(
+          `<span style="color:#3fb950;font-weight:700;">⚓ ${v.origin}</span>`,
+          { permanent: true, direction: origIsWest ? "left" : "right", offset: origIsWest ? [-16, 0] : [16, 0], className: "harbour-label-orig" }
+        );
+        routeLayer.addLayer(origMarker);
+      }
+
+      // 4. Highlighted Destination Harbour Marker + ETA
+      if (v.destLat !== undefined && v.destLon !== undefined) {
+        const destIcon = L.divIcon({
+          className: "",
+          html: `
+            <div class="harbour-dest-wrapper">
+              <div class="harbour-dest-pulse"></div>
+              <div class="harbour-dest-ring"></div>
+            </div>
+          `,
+          iconSize: [34, 34],
+          iconAnchor: [17, 17]
+        });
+        const destMarker = L.marker([v.destLat, v.destLon], { icon: destIcon, interactive: false, keyboard: false });
+        destMarker.bindTooltip(
+          `<span style="color:#ffae00;font-weight:700;">🎯 ${v.destination}</span> <span style="color:#e6edf3;">• ETA: ${v.eta || "N/A"}</span>`,
+          { permanent: true, direction: origIsWest ? "right" : "left", offset: origIsWest ? [20, 0] : [-20, 0], className: "harbour-label-dest" }
+        );
+        routeLayer.addLayer(destMarker);
+      }
+    }
+
     function updateMarineMarkers(vessels) {
       const activeIds = new Set();
+      let selectedVesselObj = null;
 
       vessels.forEach(v => {
         activeIds.add(v.id);
         const pos = [v.lat, v.lon];
         const isSelected = selectedVehicleId === v.id;
+        if (isSelected) selectedVesselObj = v;
 
         if (!markers.marine[v.id]) {
           const m = L.circleMarker(pos, {
-            radius: isSelected ? 6 : 3,
+            radius: isSelected ? 7 : 3.2,
             fillColor: isSelected ? "#00f2ff" : (v.speed > 1 ? "#3fb950" : "#8b949e"),
             color: isSelected ? "#ffffff" : "none",
-            weight: 2,
+            weight: 2.5,
             opacity: 1,
-            fillOpacity: isSelected ? 1 : 0.75
-          }).bindPopup(() => {
-            const cur = appState.marineVessels.find(x => x.id === v.id) || v;
-            return `
-              <div class="popup-title" style="color:var(--marine-color)">🚢 ${cur.name}</div>
-              <div class="popup-content-text">
-                Type: <b>${cur.shipType}</b> (${cur.category})<br/>
-                Speed: <b>${cur.speed} km/h</b><br/>
-                Heading: ${cur.heading !== 'N/A' ? cur.heading + '°' : 'N/A'}<br/>
-                Dest: <b>${cur.destination}</b><br/>
-                CallSign: ${cur.callSign}<br/>
-                ${cur.timestamp ? 'Updated: ' + new Date(cur.timestamp).toLocaleTimeString() : ''}
-              </div>
-            `;
+            fillOpacity: isSelected ? 1 : 0.78,
+            bubblingMouseEvents: false
           });
 
-          m.on('click', () => selectVehicle(v.id));
+          m.on('click', (ev) => { L.DomEvent.stopPropagation(ev); selectVehicle(v.id); });
           markers.marine[v.id] = m;
           layerGroups.marine.addLayer(m);
         } else {
           markers.marine[v.id].setLatLng(pos);
           markers.marine[v.id].setStyle({
-            radius: isSelected ? 6 : 3,
+            radius: isSelected ? 7 : 3.2,
             fillColor: isSelected ? "#00f2ff" : (v.speed > 1 ? "#3fb950" : "#8b949e"),
             color: isSelected ? "#ffffff" : "none"
           });
+          if (isSelected) markers.marine[v.id].bringToFront();
         }
       });
 
@@ -1604,6 +2393,11 @@
           delete markers.marine[id];
         }
       });
+
+      // Keep route line dynamically following the selected ship as it moves
+      if (selectedVesselObj) {
+        drawMarineRoute(selectedVesselObj);
+      }
     }
 
     // --- E. FLIGHT DATA (Local flights.json / OpenSky API) ---
@@ -1990,7 +2784,7 @@
       if (currentMode === 'marine' || currentMode === 'all') {
         const marine = appState.marineVessels.filter(v => {
           if (currentMode === 'marine' && !activeFilters.marine.has(v.category)) return false;
-          if (query && !(`${v.name} ${v.mmsi} ${v.shipType} ${v.destination}`).toLowerCase().includes(query)) return false;
+          if (query && !(`${v.name} ${v.mmsi} ${v.shipType} ${v.origin} ${v.destination}`).toLowerCase().includes(query)) return false;
           return true;
         });
         list = list.concat(marine);
@@ -2165,9 +2959,14 @@
               <div class="vehicle-title" style="color:var(--marine-color)">🚢 ${item.name}</div>
               <div class="vehicle-speed">${item.speed} km/h</div>
             </div>
-            <div class="vehicle-sub">${item.shipType} • → ${item.destination}</div>
-            <div class="vehicle-meta">
-              <span class="badge-pill">${item.category}</span>
+            <div class="vehicle-sub" style="display:flex;align-items:center;gap:4px;flex-wrap:wrap;">
+              <span style="color:#3fb950;font-weight:600;">⚓ ${item.origin || 'Unknown'}</span>
+              <span style="color:var(--text-muted);">→</span>
+              <span style="color:#ffae00;font-weight:600;">🎯 ${item.destination || 'Unknown'}</span>
+            </div>
+            <div class="vehicle-meta" style="margin-top:4px;">
+              <span class="badge-pill" style="background:rgba(255,174,0,0.14);color:#ffae00;border:1px solid rgba(255,174,0,0.3);font-weight:600;">🕒 ETA: ${item.eta || 'N/A'}</span>
+              <span class="badge-pill">${item.shipType}</span>
               <span class="badge-pill">MMSI: ${item.mmsi}</span>
             </div>
           `;
@@ -2350,14 +3149,24 @@
       if (layerGroups.routeLayer) {
         layerGroups.routeLayer.clearLayers();
       }
+      updateMarineRouteCard(null);
     }
     function selectVehicle(id, flyTo = false) {
       selectedVehicleId = id;
 
       const selectedBus = appState.busVehicles[id];
+      const selectedMarine = id && id.startsWith('marine-')
+        ? appState.marineVessels.find(v => v.id === id)
+        : null;
+
       if (selectedBus) {
+        resetDimming();
         drawBusRoute(selectedBus);
         applyLineDimming(selectedBus.line);
+      } else if (selectedMarine) {
+        resetDimming();
+        drawMarineRoute(selectedMarine);
+        updateMarineMarkers(appState.marineVessels);
       } else {
         resetDimming();
       }
@@ -2376,9 +3185,23 @@
 
       if (targetMarker && pos) {
         if (flyTo) {
-          map.flyTo(pos, Math.max(map.getZoom(), 11), { duration: 1.2 });
+          if (selectedMarine && selectedMarine.originLat !== undefined && selectedMarine.destLat !== undefined) {
+            const bounds = L.latLngBounds([
+              [selectedMarine.lat, selectedMarine.lon],
+              [selectedMarine.originLat, selectedMarine.originLon],
+              [selectedMarine.destLat, selectedMarine.destLon]
+            ]);
+            map.flyToBounds(bounds, {
+              paddingTopLeft: [370, 90],
+              paddingBottomRight: [340, 60],
+              maxZoom: 10,
+              duration: 1.1
+            });
+          } else {
+            map.flyTo(pos, Math.max(map.getZoom(), 11), { duration: 1.2 });
+          }
         }
-        setTimeout(() => targetMarker.openPopup(), flyTo ? 600 : 50);
+        if (!selectedMarine) setTimeout(() => targetMarker.openPopup(), flyTo ? 600 : 50);
       }
 
       renderLiveList(getVisibleItems());
